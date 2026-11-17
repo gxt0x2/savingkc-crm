@@ -20,8 +20,10 @@ export interface MatrixRow {
   expireDate: string | null
   dom: number | null
   cdom: number | null
+  daysOutOfRange: boolean
   listingAgentName: string | null
   listingAgentPhone: string | null
+  listingOffice: string | null
   addrNorm: string
 }
 
@@ -39,6 +41,7 @@ const AGENT_PHONE = [
   'list_agent_direct_work_phone', 'list_agent_business_phone', 'agent_business_phone',
   'list_agent_phone', 'listing_agent_phone', 'list_agent_direct_phone', 'la_phone', 'agent_phone',
 ]
+const OFFICE = ['list_office_name', 'listing_office_name', 'listing_office', 'list_office', 'lo_name']
 const MLS = ['mls_#', 'mls_number', 'mls_num', 'listingid', 'ml_number', 'mls']
 const PRICE = ['list_price', 'listprice', 'current_price', 'price', 'asking_price']
 const PARCEL = ['parcel_id', 'apn', 'parcel', 'parcel_number']
@@ -69,11 +72,22 @@ function money(value: string): number | null {
   return parsed
 }
 
+/** Days above this are rejected with the row. They are not stored as null and they do not fail the rest of the load. */
+export const MAX_MARKET_DAYS = 20000
+
+export function readMarketDays(value: string): { days: number | null; oversized: boolean } {
+  const text = value.trim().replace(/,/g, '')
+  if (!text) return { days: null, oversized: false }
+  const match = text.match(/^(\d+)(?:\.0+)?$/)
+  if (!match) return { days: null, oversized: false }
+  const days = Number(match[1])
+  if (!Number.isSafeInteger(days) || days > MAX_MARKET_DAYS) return { days: null, oversized: true }
+  return { days, oversized: false }
+}
+
 /** Whole days only. A blank cell stays null so the 90+ lane does not treat it as zero. */
 export function wholeDays(value: string): number | null {
-  const match = value.trim().replace(/,/g, '').match(/^(\d{1,5})(?:\.0+)?$/)
-  if (!match) return null
-  return Number(match[1])
+  return readMarketDays(value).days
 }
 
 function agentText(value: string, max: number): string | null {
@@ -108,6 +122,8 @@ export function parseMatrixCsv(csvText: string): MatrixRow[] {
   return table.map((row) => {
     const address = pick(row, ADDRESS)
     const parcel = normalizeParcelId(pick(row, PARCEL))
+    const dom = readMarketDays(pick(row, DOM))
+    const cdom = readMarketDays(pick(row, CDOM))
     return {
       mlsNumber: pick(row, MLS),
       statusRaw: pick(row, STATUS),
@@ -117,10 +133,12 @@ export function parseMatrixCsv(csvText: string): MatrixRow[] {
       listPrice: money(pick(row, PRICE)),
       closeDate: isoDate(pick(row, CLOSED)),
       expireDate: isoDate(pick(row, EXPIRED)),
-      dom: wholeDays(pick(row, DOM)),
-      cdom: wholeDays(pick(row, CDOM)),
+      dom: dom.days,
+      cdom: cdom.days,
+      daysOutOfRange: dom.oversized || cdom.oversized,
       listingAgentName: agentText(pick(row, AGENT_NAME), 200),
       listingAgentPhone: agentText(pick(row, AGENT_PHONE), 80),
+      listingOffice: agentText(pick(row, OFFICE), 200),
       addrNorm: normalizeMarketAddress(address),
     }
   })

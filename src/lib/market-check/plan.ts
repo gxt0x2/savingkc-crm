@@ -44,6 +44,7 @@ export interface MarketCheckDraft {
   cdom: number | null
   listingAgentName: string | null
   listingAgentPhone: string | null
+  listingOffice: string | null
   ownerOnRoll: string | null
   ownerChanged: boolean
   ownerCheckUnknown: boolean
@@ -72,7 +73,7 @@ export interface IntakeDraft {
 }
 
 export interface MarketSkip {
-  reason: 'out_of_service_area' | 'county_unresolved'
+  reason: 'out_of_service_area' | 'county_unresolved' | 'dom_out_of_range'
   zip5: string
   parcelId: string | null
   address: string
@@ -145,6 +146,7 @@ interface Hit {
   cdom: number | null
   listingAgentName: string | null
   listingAgentPhone: string | null
+  listingOffice: string | null
   zip5: string
   parcelId: string | null
   addrNorm: string
@@ -236,6 +238,7 @@ function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
     cdom: row.cdom,
     listingAgentName: row.listingAgentName,
     listingAgentPhone: row.listingAgentPhone,
+    listingOffice: row.listingOffice,
     zip5: row.zip5,
     parcelId: row.parcelId,
     addrNorm: row.addrNorm,
@@ -255,19 +258,25 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const byParcel = new Map<string, Hit>()
   const listingHits = new Map<string, Hit>()
   const covered = new Set<string>()
+  const rangeSkips: MatrixRow[] = []
   const storedListingStatuses = new Set<ListingStatus>([
-    'listed_active', 'listed_pending', 'listed_withdrawn', 'listing_expired', 'sold_new_owner',
+    'listed_active', 'listed_pending', 'listed_withdrawn', 'listing_expired', 'sold_new_owner', 'listing_check_unknown',
   ])
 
   for (const row of input.rows) {
     if (row.zip5 && row.addrNorm) covered.add(row.zip5)
+    if (row.daysOutOfRange) {
+      rangeSkips.push(row)
+      continue
+    }
     const classified = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
     if (!classified) continue
     const status: ListingStatus = classified === 'unmapped' ? 'listing_check_unknown' : classified
     const hit = hitFrom(row, status)
     if (storedListingStatuses.has(status)) {
       const listingKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
-      if (listingKey) listingHits.set(listingKey, prefer(listingHits.get(listingKey), hit) as Hit)
+      // Later file row wins, including an unmapped status, so an older active row cannot stay current.
+      if (listingKey) listingHits.set(listingKey, hit)
     }
     if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit) as Hit)
     if (!row.addrNorm || !row.zip5) continue
@@ -281,7 +290,12 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const checks: MarketCheckDraft[] = []
   const tags: TagDraft[] = []
   const intakes: IntakeDraft[] = []
-  const skipped: MarketSkip[] = []
+  const skipped: MarketSkip[] = rangeSkips.map((row) => ({
+    reason: 'dom_out_of_range' as const,
+    zip5: row.zip5,
+    parcelId: row.parcelId,
+    address: row.address,
+  }))
   const seenIntake = new Set<string>()
   const tagged = new Set<string>()
 
@@ -296,6 +310,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
       expireDate: hit?.expireDate ?? null,
       listingAgentName: hit?.listingAgentName ?? null,
       listingAgentPhone: hit?.listingAgentPhone ?? null,
+      listingOffice: hit?.listingOffice ?? null,
     }
   }
 
@@ -423,12 +438,26 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
         expireDate: row.expireDate,
         listingAgentName: row.listingAgentName,
         listingAgentPhone: row.listingAgentPhone,
+        listingOffice: row.listingOffice,
       })
     }
   }
 
   for (const [key, hit] of listingHits) {
-    if (checks.some((check) => check.propertyKey === key)) continue
+    const facts = marketFacts(hit)
+    const existing = checks.find((check) => check.propertyKey === key)
+    if (existing) {
+      existing.listingStatus = hit.status
+      existing.mlsNumber = hit.mlsNumber
+      existing.listStatusRaw = hit.raw
+      existing.dom = facts.dom
+      existing.cdom = facts.cdom
+      existing.expireDate = facts.expireDate
+      existing.listingAgentName = facts.listingAgentName
+      existing.listingAgentPhone = facts.listingAgentPhone
+      existing.listingOffice = facts.listingOffice
+      continue
+    }
     pushCheck({
       parcelId: hit.parcelId,
       addrNorm: hit.addrNorm,

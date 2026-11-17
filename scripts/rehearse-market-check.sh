@@ -686,12 +686,12 @@ DECLARE
 BEGIN
   INSERT INTO public.property_market_checks (
     parcel_id, addr_norm, zip5, source, list_day, listing_status,
-    dom, cdom, expire_date, listing_agent_name, listing_agent_phone
+    dom, cdom, expire_date, listing_agent_name, listing_agent_phone, listing_office
   ) VALUES
-    ('N90A', '40 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_active', 120, 40, DATE '2026-12-01', 'Ada Agent', '(816) 555-0100'),
-    ('N90P', '41 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_pending', 200, 200, NULL, 'Bea Agent', '816-555-0101'),
-    ('N90E', '42 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listing_expired', 200, 200, DATE '2026-11-01', 'Cara Agent', '816-555-0102'),
-    ('N90W', '43 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_withdrawn', 10, 90, NULL, 'Dee Agent', '816-555-0199');
+    ('N90A', '40 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_active', 120, 40, DATE '2026-12-01', 'Ada Agent', '(816) 555-0100', 'Ada Realty'),
+    ('N90P', '41 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_pending', 200, 200, NULL, 'Bea Agent', '816-555-0101', NULL),
+    ('N90E', '42 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listing_expired', 200, 200, DATE '2026-11-01', 'Cara Agent', '816-555-0102', NULL),
+    ('N90W', '43 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_withdrawn', 10, 90, NULL, 'Dee Agent', '816-555-0199', NULL);
 
   SELECT count(*) INTO v_count
   FROM public.market_ninety_plus_days_v1
@@ -712,9 +712,22 @@ BEGIN
       AND listing_agent_name = 'Ada Agent'
       AND listing_agent_phone = '(816) 555-0100'
       AND offer_contact = 'listing_agent'
+      AND listing_office = 'Ada Realty'
+      AND requires_licensee_disclosure IS TRUE
+      AND basis = 'owner_ruling_2026-11-17_listing_agent'
       AND dom = 120
   ) THEN
-    RAISE EXCEPTION '90+ lane dropped the listing agent or DOM';
+    RAISE EXCEPTION '90+ lane dropped the listing agent, office, or basis';
+  END IF;
+
+  INSERT INTO public.property_market_checks (
+    parcel_id, addr_norm, zip5, source, list_day, listing_status, dom, checked_at
+  ) VALUES
+    ('N90S', '50 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listed_active', 100, clock_timestamp() - interval '1 minute'),
+    ('N90S', '50 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE, 'listing_check_unknown', NULL, clock_timestamp()),
+    ('N90Y', '51 OAK ST', '64114', 'heartland_matrix', CURRENT_DATE - 2, 'listed_active', 120, clock_timestamp() - interval '2 days');
+  IF EXISTS (SELECT 1 FROM public.market_ninety_plus_days_v1 WHERE property_key IN ('parcel:N90S', 'parcel:N90Y')) THEN
+    RAISE EXCEPTION '90+ lane kept a stale active row or a newer unmapped row';
   END IF;
 
   IF public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED') THEN
@@ -732,7 +745,7 @@ BEGIN
   IF public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED') THEN
     RAISE EXCEPTION 'rejected citation changed the KS flag';
   END IF;
-  PERFORM public.record_mls_ks_expired_release_v1('true', 'OWNER-2026-11-17-0710-CT');
+  PERFORM public.record_mls_ks_expired_release_v1('true', 'OWNER-2026-11-17-0710-CT', 'rehearsal');
   IF NOT public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED') THEN
     RAISE EXCEPTION 'owner citation did not raise KS_EXPIRED_RELEASE_APPROVED';
   END IF;
@@ -741,6 +754,7 @@ BEGIN
     WHERE flag_key = 'KS_EXPIRED_RELEASE_APPROVED'
       AND new_value = 'true'
       AND citation = 'OWNER-2026-11-17-0710-CT'
+      AND actor = 'rehearsal'
   ) THEN
     RAISE EXCEPTION 'KS raise did not write an audit row';
   END IF;

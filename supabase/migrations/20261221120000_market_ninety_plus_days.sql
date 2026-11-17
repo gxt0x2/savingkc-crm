@@ -23,7 +23,19 @@ ON CONFLICT (key) DO NOTHING;
 COMMENT ON TABLE public.mls_market_config IS
   'Market-check switches. KS_EXPIRED_RELEASE_CITATION is the placeholder for the owner approval on 2026-11-17 at 7:10am America/Chicago. KS_EXPIRED_RELEASE_APPROVED stays false until record_mls_ks_expired_release_v1 is called with that citation.';
 
-CREATE OR REPLACE FUNCTION public.record_mls_ks_expired_release_v1(p_value text, p_citation text)
+ALTER TABLE public.mls_market_flag_changes
+  ADD COLUMN IF NOT EXISTS actor text;
+
+ALTER TABLE public.mls_market_flag_changes
+  DROP CONSTRAINT IF EXISTS mls_market_flag_changes_actor_check;
+ALTER TABLE public.mls_market_flag_changes
+  ADD CONSTRAINT mls_market_flag_changes_actor_check CHECK (actor IS NULL OR char_length(actor) <= 320);
+
+CREATE OR REPLACE FUNCTION public.record_mls_ks_expired_release_v1(
+  p_value text,
+  p_citation text,
+  p_actor text DEFAULT NULL
+)
 RETURNS void
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
@@ -52,23 +64,29 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'mls_market_flag_unknown';
   END IF;
-  INSERT INTO public.mls_market_flag_changes (flag_key, new_value, citation)
-  VALUES ('KS_EXPIRED_RELEASE_APPROVED', 'true', btrim(p_citation));
+  INSERT INTO public.mls_market_flag_changes (flag_key, new_value, citation, actor)
+  VALUES (
+    'KS_EXPIRED_RELEASE_APPROVED',
+    'true',
+    btrim(p_citation),
+    nullif(left(btrim(coalesce(p_actor, '')), 320), '')
+  );
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.record_mls_ks_expired_release_v1(text, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.record_mls_ks_expired_release_v1(text, text) TO service_role;
+REVOKE ALL ON FUNCTION public.record_mls_ks_expired_release_v1(text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_mls_ks_expired_release_v1(text, text, text) TO service_role;
 
-COMMENT ON FUNCTION public.record_mls_ks_expired_release_v1(text, text) IS
-  'Raises KS_EXPIRED_RELEASE_APPROVED only. Writes the same mls_market_flag_changes audit row as record_mls_market_flag_v1. The citation must match KS_EXPIRED_RELEASE_CITATION. EXC-2026-11-14-003 cannot raise this flag. The migration leaves the flag false.';
+COMMENT ON FUNCTION public.record_mls_ks_expired_release_v1(text, text, text) IS
+  'Raises KS_EXPIRED_RELEASE_APPROVED only. Writes the same mls_market_flag_changes audit row as record_mls_market_flag_v1, plus the actor. The citation must match KS_EXPIRED_RELEASE_CITATION. EXC-2026-11-14-003 cannot raise this flag. The migration leaves the flag false.';
 
 ALTER TABLE public.property_market_checks
   ADD COLUMN IF NOT EXISTS dom integer,
   ADD COLUMN IF NOT EXISTS cdom integer,
   ADD COLUMN IF NOT EXISTS expire_date date,
   ADD COLUMN IF NOT EXISTS listing_agent_name text,
-  ADD COLUMN IF NOT EXISTS listing_agent_phone text;
+  ADD COLUMN IF NOT EXISTS listing_agent_phone text,
+  ADD COLUMN IF NOT EXISTS listing_office text;
 
 ALTER TABLE public.property_market_checks
   DROP CONSTRAINT IF EXISTS property_market_checks_dom_check;
@@ -90,13 +108,20 @@ ALTER TABLE public.property_market_checks
   ADD CONSTRAINT property_market_checks_agent_phone_check CHECK (
     listing_agent_phone IS NULL OR char_length(listing_agent_phone) <= 80
   );
+ALTER TABLE public.property_market_checks
+  DROP CONSTRAINT IF EXISTS property_market_checks_office_check;
+ALTER TABLE public.property_market_checks
+  ADD CONSTRAINT property_market_checks_office_check CHECK (
+    listing_office IS NULL OR char_length(listing_office) <= 200
+  );
 
 ALTER TABLE public.property_market_latest
   ADD COLUMN IF NOT EXISTS dom integer,
   ADD COLUMN IF NOT EXISTS cdom integer,
   ADD COLUMN IF NOT EXISTS expire_date date,
   ADD COLUMN IF NOT EXISTS listing_agent_name text,
-  ADD COLUMN IF NOT EXISTS listing_agent_phone text;
+  ADD COLUMN IF NOT EXISTS listing_agent_phone text,
+  ADD COLUMN IF NOT EXISTS listing_office text;
 
 CREATE OR REPLACE VIEW public.property_market_status_v1
 WITH (security_invoker = true) AS
@@ -121,7 +146,8 @@ SELECT DISTINCT ON (keyed.property_key)
   keyed.cdom,
   keyed.expire_date,
   keyed.listing_agent_name,
-  keyed.listing_agent_phone
+  keyed.listing_agent_phone,
+  keyed.listing_office
 FROM (
   SELECT
     checks.*,
@@ -134,7 +160,9 @@ FROM (
     END AS property_key
   FROM public.property_market_checks AS checks
 ) AS keyed
-ORDER BY keyed.property_key, keyed.checked_at DESC, keyed.id DESC;
+ORDER BY keyed.property_key, keyed.checked_at DESC,
+  CASE WHEN keyed.listing_status = 'listing_check_unknown' THEN 1 ELSE 0 END DESC,
+  keyed.id DESC;
 
 COMMENT ON VIEW public.property_market_status_v1 IS
   'Latest market check per parcel, or per normalized street and zip when the parcel is blank. Includes DOM, CDOM, the expiration or off-market date, and the listing agent.';
@@ -152,13 +180,20 @@ SELECT
   status.expire_date,
   status.listing_agent_name,
   status.listing_agent_phone,
+  status.listing_office,
   status.list_day,
   status.list_price,
+  status.checked_at,
+  true AS requires_licensee_disclosure,
+  'owner_ruling_2026-11-17_listing_agent'::text AS basis,
   'listing_agent'::text AS offer_contact
 FROM public.property_market_status_v1 AS status
 WHERE status.listing_status IN ('listed_active', 'listed_withdrawn')
   AND status.listing_status IS DISTINCT FROM 'listed_pending'
   AND status.listing_status IS DISTINCT FROM 'listing_expired'
+  AND status.listing_status IS DISTINCT FROM 'listing_check_unknown'
+  AND (timezone('America/Chicago', status.checked_at))::date
+      = (timezone('America/Chicago', clock_timestamp()))::date
   AND (status.dom >= 90 OR status.cdom >= 90);
 
 COMMENT ON VIEW public.market_ninety_plus_days_v1 IS
@@ -195,11 +230,26 @@ BEGIN
   END IF;
 
   BEGIN
+    -- One oversized DOM or CDOM drops that check only. The rest of the day still inserts.
+    v_skipped := v_skipped || coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+        'stage', 'checks',
+        'reason', 'dom_out_of_range',
+        'parcelId', item->>'parcelId',
+        'mlsNumber', item->>'mlsNumber'
+      ))
+      FROM jsonb_array_elements(coalesce(p_plan->'checks', '[]'::jsonb)) AS item
+      WHERE coalesce(item->>'dom', '') ~ '^[0-9]{6,}$'
+        OR (coalesce(item->>'dom', '') ~ '^[0-9]{1,5}$' AND (item->>'dom')::integer > 20000)
+        OR coalesce(item->>'cdom', '') ~ '^[0-9]{6,}$'
+        OR (coalesce(item->>'cdom', '') ~ '^[0-9]{1,5}$' AND (item->>'cdom')::integer > 20000)
+    ), '[]'::jsonb);
+
     INSERT INTO public.property_market_checks (
       parcel_id, addr_norm, zip5, source, list_day, export_file_sha256, mls_number,
       list_status_raw, listing_status, close_date, list_price, owner_on_roll,
       owner_changed, owner_check_unknown,
-      dom, cdom, expire_date, listing_agent_name, listing_agent_phone
+      dom, cdom, expire_date, listing_agent_name, listing_agent_phone, listing_office
     )
     SELECT
       nullif(item->>'parcelId', ''),
@@ -229,12 +279,19 @@ BEGIN
         ELSE NULL
       END,
       left(nullif(btrim(item->>'listingAgentName'), ''), 200),
-      left(nullif(btrim(item->>'listingAgentPhone'), ''), 80)
+      left(nullif(btrim(item->>'listingAgentPhone'), ''), 80),
+      left(nullif(btrim(item->>'listingOffice'), ''), 200)
     FROM jsonb_array_elements(coalesce(p_plan->'checks', '[]'::jsonb)) AS item
     WHERE item->>'listingStatus' IN (
       'listed_active', 'listed_pending', 'sold_new_owner', 'listed_withdrawn',
       'off_market_ok', 'listing_check_unknown', 'listing_expired'
-    );
+    )
+      AND NOT (
+        coalesce(item->>'dom', '') ~ '^[0-9]{6,}$'
+        OR (coalesce(item->>'dom', '') ~ '^[0-9]{1,5}$' AND (item->>'dom')::integer > 20000)
+        OR coalesce(item->>'cdom', '') ~ '^[0-9]{6,}$'
+        OR (coalesce(item->>'cdom', '') ~ '^[0-9]{1,5}$' AND (item->>'cdom')::integer > 20000)
+      );
     GET DIAGNOSTICS v_checks = ROW_COUNT;
   EXCEPTION WHEN OTHERS THEN
     v_checks := 0;
@@ -245,7 +302,7 @@ BEGIN
     INSERT INTO public.property_market_latest (
       property_key, parcel_key, addr_norm, zip5, listing_status, list_day, source,
       owner_changed, owner_check_unknown, checked_at, check_id,
-      dom, cdom, expire_date, listing_agent_name, listing_agent_phone
+      dom, cdom, expire_date, listing_agent_name, listing_agent_phone, listing_office
     )
     SELECT DISTINCT ON (keyed.property_key)
       keyed.property_key,
@@ -263,7 +320,8 @@ BEGIN
       keyed.cdom,
       keyed.expire_date,
       keyed.listing_agent_name,
-      keyed.listing_agent_phone
+      keyed.listing_agent_phone,
+      keyed.listing_office
     FROM (
       SELECT checks.*,
         CASE
@@ -275,7 +333,9 @@ BEGIN
       WHERE checks.list_day = v_day
         AND checks.source = 'heartland_matrix'
     ) AS keyed
-    ORDER BY keyed.property_key, public.market_status_rank_v1(keyed.listing_status) DESC, keyed.checked_at DESC
+    ORDER BY keyed.property_key, keyed.checked_at DESC,
+      CASE WHEN keyed.listing_status = 'listing_check_unknown' THEN 1 ELSE 0 END DESC,
+      public.market_status_rank_v1(keyed.listing_status) DESC
     ON CONFLICT (property_key) DO UPDATE SET
       parcel_key = EXCLUDED.parcel_key,
       listing_status = EXCLUDED.listing_status,
@@ -289,7 +349,8 @@ BEGIN
       cdom = EXCLUDED.cdom,
       expire_date = EXCLUDED.expire_date,
       listing_agent_name = EXCLUDED.listing_agent_name,
-      listing_agent_phone = EXCLUDED.listing_agent_phone;
+      listing_agent_phone = EXCLUDED.listing_agent_phone,
+      listing_office = EXCLUDED.listing_office;
   EXCEPTION WHEN OTHERS THEN
     v_skipped := v_skipped || jsonb_build_array(jsonb_build_object('stage', 'latest', 'reason', 'row_skipped', 'detail', SQLERRM));
   END;
