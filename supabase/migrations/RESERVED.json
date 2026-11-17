@@ -29,5 +29,6 @@
   {"version":"20261218120000","pr":830,"owner":"gxt0x2","note":"#827 N1/O3 follow-up"},
   {"version":"20261219120000","pr":831,"owner":"gxt0x2","note":"counsel relationship lane gate"},
   {"version":"20261220120000","pr":825,"owner":"gxt0x2","note":"mojo dnc ledger"},
-  {"version":"20261220130000","pr":825,"owner":"gxt0x2","note":"calling pool v1"}
+  {"version":"20261220130000","pr":825,"owner":"gxt0x2","note":"calling pool v1"},
+  {"version":"20261221120000","pr":834,"owner":"gxt0x2","note":"market 90+ days and KS expired release"}
 ]
