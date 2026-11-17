@@ -9,13 +9,6 @@
       "expiresOn": "2026-12-15"
     },
     {
-      "advisoryId": "GHSA-gcqx-w48m-w2h4",
-      "package": "deepmerge",
-      "owner": "Mobile Platform",
-      "reason": "deepmerge 4.2.0 through 4.3.1 mergeObject prototype pollution. 4.3.1 is the newest 4.x release and is still affected. Expo SDK 56 pulls it through @expo/cli and expo, so the mobile audit gate reports the advisory on those high-severity parents. npm audit's only fix is Expo 51, which would leave SDK 56. Remove this when a patched deepmerge or Expo 56 release no longer installs 4.2.0-4.3.1.",
-      "expiresOn": "2026-12-15"
-    },
-    {
       "advisoryId": "GHSA-3g3m-2fjr-6pw4",
       "package": "@expo/cli",
       "owner": "Mobile Platform",
