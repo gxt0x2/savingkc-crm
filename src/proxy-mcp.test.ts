@@ -82,6 +82,25 @@ describe('/api/mcp proxy containment', () => {
     expect(mocks.createServerClient).toHaveBeenCalledOnce()
   })
 
+  it('lets the line type lookup route reach its MCP bearer check', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    const request = new NextRequest('https://crm.savingkc.com/api/ops/line-type-lookup', { method: 'POST' })
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('does not expose a lookalike line type lookup path', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    const request = new NextRequest('https://crm.savingkc.com/api/ops/line-type-lookup-copy', { method: 'POST' })
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(401)
+    expect(mocks.createServerClient).toHaveBeenCalledOnce()
+  })
+
   it('does not expose a lookalike OAuth API path', async () => {
     const request = new NextRequest('https://crm.savingkc.com/api/oauth/token-copy')
     const response = await proxy(request, event)
