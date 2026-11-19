@@ -481,9 +481,9 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/.well-known/oauth-protected-resource", "/oauth/consent"],
-      "apiRoutes": ["/api/mcp", "/api/oauth/decision"],
+      "apiRoutes": ["/api/mcp", "/api/oauth/decision", "/api/ops/line-type-lookup"],
       "tables": ["assistant_query_audit"],
-      "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS"]
+      "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"]
     },
     {
       "id": "workflows",
