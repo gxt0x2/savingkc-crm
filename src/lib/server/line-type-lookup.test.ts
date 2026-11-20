@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantActor } from '@/lib/assistant/auth'
+import { PHONE_LINE_LOOKUP_FIELDS } from './phone-line-lookup-fields'
 import {
   chicagoDayStart,
   CRM_LINE_TYPE_LOOKUP_TOOL,
+  LINE_STATUS_LOOKUP_PRICE_USD,
+  LINE_TYPE_INTELLIGENCE_PRICE_USD,
   LINE_TYPE_LOOKUP_AUDIT_ACTION,
   LINE_TYPE_LOOKUP_DAILY_CAP,
   LINE_TYPE_LOOKUP_FIELDS,
+  LINE_TYPE_LOOKUP_PRICE_USD,
   lineTypeLookupCsv,
   mapLookupLineType,
   readLineTypeLookupCredentials,
@@ -40,9 +44,10 @@ type StoredAudit = {
   payload: Record<string, unknown>
 }
 
-function lookupBody(type: string, carrier = 'T-Mobile', valid = true) {
+function lookupBody(type: string, carrier = 'T-Mobile', valid = true, status = 'active') {
   return {
     valid,
+    line_status: { status, error_code: null },
     line_type_intelligence: { type, carrier_name: carrier, error_code: null },
   }
 }
@@ -188,10 +193,17 @@ describe('line type lookup credentials and calendar', () => {
 })
 
 describe('runLineTypeLookup', () => {
-  it('does not reference prospect, phone, DNC, or TCPA writes', () => {
+  it('requests the same Lookup packages as lookupPhoneLine and books both prices', () => {
     const source = readFileSync('src/lib/server/line-type-lookup.ts', 'utf8')
+    const lookupSource = readFileSync('src/lib/server/phone-line-lookup.ts', 'utf8')
     expect(source).toContain(`Fields=\${LINE_TYPE_LOOKUP_FIELDS}`)
-    expect(LINE_TYPE_LOOKUP_FIELDS).toBe('line_type_intelligence')
+    expect(LINE_TYPE_LOOKUP_FIELDS).toBe(PHONE_LINE_LOOKUP_FIELDS)
+    expect(LINE_TYPE_LOOKUP_FIELDS).toBe('line_status,line_type_intelligence')
+    expect(lookupSource).toContain('fields: PHONE_LINE_LOOKUP_FIELDS')
+    expect(LINE_STATUS_LOOKUP_PRICE_USD).toBe(0.007)
+    expect(LINE_TYPE_INTELLIGENCE_PRICE_USD).toBe(0.008)
+    expect(LINE_TYPE_LOOKUP_PRICE_USD).toBe(0.015)
+    expect(Math.round((LINE_STATUS_LOOKUP_PRICE_USD + LINE_TYPE_INTELLIGENCE_PRICE_USD) * 1000)).toBe(15)
     expect(CRM_LINE_TYPE_LOOKUP_TOOL).toBe('crm_line_type_lookup')
     expect(source).not.toMatch(/prospect_phones|phone_line_checks|sms_opt_outs|from\(['"]prospect|from\(['"]phone/)
   })
@@ -213,17 +225,16 @@ describe('runLineTypeLookup', () => {
     expect(result.status).toBe(200)
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     const firstUrl = String(fetchImpl.mock.calls[0]?.[0])
-    expect(firstUrl).toContain('Fields=line_type_intelligence')
-    expect(firstUrl).not.toContain('line_status')
+    expect(firstUrl).toContain('Fields=line_status,line_type_intelligence')
     const authorization = new Headers(fetchImpl.mock.calls[0]?.[1]?.headers).get('Authorization') ?? ''
     expect(Buffer.from(authorization.slice(6), 'base64').toString()).toBe('SK123:secret123')
     expect(result.body.rows).toEqual([
-      expect.objectContaining({ e164: '+18165550100', valid: true, line_type: 'nonFixedVoip', carrier: 'Verizon, Wireless', error: null }),
-      expect.objectContaining({ e164: '+18165550100', valid: true, line_type: 'nonFixedVoip' }),
-      expect.objectContaining({ e164: '+18165550101', valid: true, line_type: 'landline' }),
-      expect.objectContaining({ e164: 'not-a-phone', valid: false, line_type: 'unknown', error: 'invalid_phone' }),
+      expect.objectContaining({ e164: '+18165550100', valid: true, line_type: 'nonFixedVoip', carrier: 'Verizon, Wireless', line_status: 'active', line_status_error: null, error: null }),
+      expect.objectContaining({ e164: '+18165550100', valid: true, line_type: 'nonFixedVoip', line_status: 'active' }),
+      expect.objectContaining({ e164: '+18165550101', valid: true, line_type: 'landline', line_status: 'active' }),
+      expect.objectContaining({ e164: 'not-a-phone', valid: false, line_type: 'unknown', line_status: 'unknown', line_status_error: null, error: 'invalid_phone' }),
     ])
-    expect(result.body.csv?.split('\n')[0]).toBe('e164,valid,line_type,carrier,checked_at')
+    expect(result.body.csv?.split('\n')[0]).toBe('e164,valid,line_type,carrier,checked_at,line_status,line_status_error')
     expect(result.body.csv).toContain('"+18165550100",true,nonFixedVoip,"Verizon, Wireless",2026-11-19T18:00:00.000Z')
     expect(result.body.usage).toMatchObject({
       timezone: 'America/Chicago',
@@ -262,7 +273,52 @@ describe('runLineTypeLookup', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleeps).toEqual([1000])
-    expect(result.body.rows?.[0]).toMatchObject({ e164: '+18165550102', valid: true, line_type: 'mobile', carrier: 'T-Mobile', error: null })
+    expect(result.body.rows?.[0]).toMatchObject({ e164: '+18165550102', valid: true, line_type: 'mobile', carrier: 'T-Mobile', line_status: 'active', line_status_error: null, error: null })
+  })
+
+  it('returns active, inactive, and unreachable status, and a Twilio line status error', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const phone = decodeURIComponent(String(url).split('/PhoneNumbers/')[1]?.split('?')[0] ?? '')
+      if (phone.endsWith('0100')) {
+        return new Response(JSON.stringify({
+          valid: true,
+          line_status: { status: 'Active', error_code: null },
+          line_type_intelligence: { type: 'mobile', carrier_name: 'T-Mobile', error_code: null },
+        }), { status: 200 })
+      }
+      if (phone.endsWith('0101')) {
+        return new Response(JSON.stringify({
+          valid: true,
+          lineStatus: { status: 'Inactive', errorCode: null },
+          lineTypeIntelligence: { type: 'landline', carrierName: 'AT&T', errorCode: null },
+        }), { status: 200 })
+      }
+      if (phone.endsWith('0102')) {
+        return new Response(JSON.stringify({
+          valid: true,
+          line_status: { status: 'Unreachable', error_code: null },
+          line_type_intelligence: { type: 'fixedVoip', carrier_name: 'Comcast', error_code: null },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({
+        valid: true,
+        line_status: { status: null, error_code: 60616 },
+        line_type_intelligence: { type: 'mobile', carrier_name: 'Verizon', error_code: null },
+      }), { status: 200 })
+    })
+    const result = await run({ phones: ['8165550100', '8165550101', '8165550102', '8165550103'], fetchImpl })
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain('Fields=line_status,line_type_intelligence')
+    expect(result.status).toBe(200)
+    expect(result.body.rows).toEqual([
+      expect.objectContaining({ e164: '+18165550100', valid: true, line_type: 'mobile', carrier: 'T-Mobile', line_status: 'active', line_status_error: null, error: null }),
+      expect.objectContaining({ e164: '+18165550101', valid: true, line_type: 'landline', carrier: 'AT&T', line_status: 'inactive', line_status_error: null, error: null }),
+      expect.objectContaining({ e164: '+18165550102', valid: true, line_type: 'fixedVoip', carrier: 'Comcast', line_status: 'unreachable', line_status_error: null, error: null }),
+      expect.objectContaining({ e164: '+18165550103', valid: true, line_type: 'mobile', carrier: 'Verizon', line_status: 'unknown', line_status_error: '60616', error: null }),
+    ])
+    expect(result.body.csv).toContain('"+18165550103",true,mobile,Verizon,2026-11-19T18:00:00.000Z,unknown,60616')
+    expect(result.body.usage).toMatchObject({ counted: 4, pricePerLookupUsd: 0.015 })
   })
 
   it('keeps at most five lookups in flight', async () => {
@@ -291,7 +347,7 @@ describe('runLineTypeLookup', () => {
     const fetchImpl = vi.fn(async () => new Response('nope', { status: 500 }))
     const result = await run({ phones: ['8165550103'], fetchImpl })
     expect(result.status).toBe(200)
-    expect(result.body.rows?.[0]).toMatchObject({ valid: false, line_type: 'unknown', carrier: '', error: 'lookup_failed' })
+    expect(result.body.rows?.[0]).toMatchObject({ valid: false, line_type: 'unknown', carrier: '', line_status: 'unknown', line_status_error: null, error: 'lookup_failed' })
     expect(result.body.usage?.counted).toBe(1)
     expect(result.body.csv).toContain(',false,unknown,,')
   })
@@ -428,8 +484,10 @@ describe('runLineTypeLookup', () => {
       line_type: 'unknown',
       carrier: '=cmd',
       checked_at: '2026-11-19T18:00:00.000Z',
+      line_status: 'active',
+      line_status_error: null,
       error: null,
     }]
-    expect(lineTypeLookupCsv(rows)).toContain('"+18165550100",true,unknown,"=cmd",')
+    expect(lineTypeLookupCsv(rows)).toContain('"+18165550100",true,unknown,"=cmd",2026-11-19T18:00:00.000Z,active,')
   })
 })

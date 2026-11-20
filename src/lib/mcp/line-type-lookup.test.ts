@@ -58,7 +58,10 @@ describe('crm_line_type_lookup MCP tool', () => {
     const registered = tools()
     const tool = registered.get('crm_line_type_lookup')
     expect(tool?.description).toContain('phones')
+    expect(tool?.description).toContain('line_status')
+    expect(tool?.description).toContain('line_status_error')
     expect(tool?.description).toContain('1,000')
+    expect(tool?.description).toContain('$0.015')
 
     const result = await tool?.handler(
       { phones: ['8165550100'] },
