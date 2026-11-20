@@ -37,7 +37,7 @@ const LIFECYCLE_COLUMNS = 'id, lead_id, from_stage, to_stage, occurred_at'
 
 /**
  * Casey is the only agent who receives My Day in navigation. SavingKC admins
- * may open the direct URL to review her workspace without exposing the tab to
+ * may open the direct URL to review his workspace without exposing the tab to
  * the rest of the team.
  */
 export async function canAccessCaseyMyDay(email: string | null | undefined): Promise<boolean> {

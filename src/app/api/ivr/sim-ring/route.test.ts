@@ -37,7 +37,7 @@ describe('/api/ivr/sim-ring', () => {
     expect(twiml).toContain('agent=Ernest')
   })
 
-  it('rings Casey too during her scheduled window', async () => {
+  it('rings Casey too during his scheduled window', async () => {
     vi.mocked(getLeadAlertRecipients).mockReturnValue([
       { name: 'Ernest', phone: '+18160000001', schedule: '24_7' },
       { name: 'Casey', phone: '+18160000002', schedule: 'weekday_business_hours' },

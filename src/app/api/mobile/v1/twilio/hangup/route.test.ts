@@ -36,7 +36,7 @@ describe('mobile hangup route', () => {
     expect(mocks.attempt).toHaveBeenCalledWith('ernest', 'attempt-1')
     expect(mocks.hangup).not.toHaveBeenCalled()
   })
-  it('keeps Casey on her own identity', async () => {
+  it('keeps Casey on his own identity', async () => {
     mocks.user.mockResolvedValue({ user: { email: 'casey@savingkc.com' } })
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com' })
     expect((await POST(pending())).status).toBe(200)

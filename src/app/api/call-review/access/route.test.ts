@@ -20,7 +20,7 @@ describe('call review access', () => {
     await expect(response.json()).resolves.toEqual({ canReviewCalls: true })
   })
 
-  it('denies Casey even when she is otherwise an authenticated CRM user', async () => {
+  it('denies Casey even when he is otherwise an authenticated CRM user', async () => {
     mocks.getCurrentUserEmail.mockResolvedValue('casey@savingkc.com')
 
     const response = await GET()
