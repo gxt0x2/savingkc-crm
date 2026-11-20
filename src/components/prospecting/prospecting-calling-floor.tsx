@@ -606,8 +606,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         />
 
         <div className="p-3 lg:min-h-0 lg:flex-1">
+          {/* Do not key this rail by the current seller. That remount drops the live Twilio device. Heirs, notes, and wrap-up reset on their own keys. */}
           <ProspectingCallingContextRail
-          key={currentSubjectKey || 'current'}
           primaryWorkspace={currentSubject ? (
             <HeirsSection
               key={`${currentSubjectKey}:${autoStartEpoch}:${callContextResetEpoch}`}
