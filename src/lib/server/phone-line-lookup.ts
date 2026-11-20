@@ -1,8 +1,8 @@
 import twilio from 'twilio'
 import { parseTwilioLookupPayload, type ParsedLookup } from '@/lib/server/phone-line-check'
+import { PHONE_LINE_LOOKUP_FIELDS } from '@/lib/server/phone-line-lookup-fields'
 
 const LOOKUP_TIMEOUT_MS = 8_000
-const LOOKUP_FIELDS = 'line_status,line_type_intelligence'
 
 function cleanTwilioEnv(name: string): string {
   return process.env[name]
@@ -39,6 +39,6 @@ export function createTwilioLookupClient(): LookupClient {
 }
 
 export async function lookupPhoneLine(client: LookupClient, phoneE164: string): Promise<ParsedLookup> {
-  const payload = await client.lookups.v2.phoneNumbers(phoneE164).fetch({ fields: LOOKUP_FIELDS })
+  const payload = await client.lookups.v2.phoneNumbers(phoneE164).fetch({ fields: PHONE_LINE_LOOKUP_FIELDS })
   return parseTwilioLookupPayload(payload)
 }

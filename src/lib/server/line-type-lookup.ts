@@ -1,9 +1,11 @@
 import 'server-only'
 
 /**
- * On-demand Twilio Lookup v2 line type checks for the CRM MCP tool.
+ * On-demand Twilio Lookup v2 checks for the CRM MCP tool.
  *
- * Each billable number is one Lookup with Fields=line_type_intelligence.
+ * Each billable number is one Lookup with the same fields lookupPhoneLine
+ * requests: line_status and line_type_intelligence. Line status is $0.007
+ * and line type intelligence is $0.008, so the booked price is $0.015.
  * The America/Chicago daily count is the sum of assistant_query_audit
  * result_count for this action. That table already exists, so the
  * 1,000-lookup cap does not need a migration. Audit rows store the count
@@ -16,6 +18,8 @@ import {
 } from '@/lib/assistant/auth'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { parseTwilioLookupPayload, type MappedLineStatus } from '@/lib/server/phone-line-check'
+import { PHONE_LINE_LOOKUP_FIELDS } from '@/lib/server/phone-line-lookup-fields'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const CRM_LINE_TYPE_LOOKUP_TOOL = 'crm_line_type_lookup'
@@ -24,15 +28,17 @@ export const LINE_TYPE_LOOKUP_AUDIT_ACTION = 'mcp:line_type_lookup'
 export const LINE_TYPE_LOOKUP_DAILY_CAP = 1000
 export const LINE_TYPE_LOOKUP_MAX_PHONES = 200
 export const LINE_TYPE_LOOKUP_CONCURRENCY = 5
+export const LINE_STATUS_LOOKUP_PRICE_USD = 0.007
+export const LINE_TYPE_INTELLIGENCE_PRICE_USD = 0.008
 export const LINE_TYPE_LOOKUP_PRICE_USD = 0.015
-export const LINE_TYPE_LOOKUP_FIELDS = 'line_type_intelligence'
+export const LINE_TYPE_LOOKUP_FIELDS = PHONE_LINE_LOOKUP_FIELDS
 
 const LOOKUP_TIMEOUT_MS = 8_000
 const LOOKUP_ATTEMPTS = 4
 const RETRY_BACKOFF_MS = [200, 400, 800]
 const MAX_RETRY_DELAY_MS = 2_000
 const CHICAGO = 'America/Chicago'
-const CSV_HEADER = 'e164,valid,line_type,carrier,checked_at'
+const CSV_HEADER = 'e164,valid,line_type,carrier,checked_at,line_status,line_status_error'
 const LINE_TYPES = ['mobile', 'landline', 'fixedVoip', 'nonFixedVoip', 'tollFree'] as const
 
 export type LineType = (typeof LINE_TYPES)[number] | 'unknown'
@@ -43,6 +49,8 @@ export type LineTypeLookupRow = {
   line_type: LineType
   carrier: string
   checked_at: string
+  line_status: MappedLineStatus
+  line_status_error: string | null
   error: string | null
 }
 
@@ -91,6 +99,8 @@ type LookupHit = {
   valid: boolean
   lineType: LineType
   carrier: string
+  lineStatus: MappedLineStatus
+  lineStatusError: string | null
   error: string | null
   checkedAt: string
 }
@@ -197,6 +207,8 @@ export function lineTypeLookupCsv(rows: LineTypeLookupRow[]): string {
     csvCell(row.line_type),
     csvCell(row.carrier),
     csvCell(row.checked_at),
+    csvCell(row.line_status),
+    csvCell(row.line_status_error ?? ''),
   ].join(','))
   return `${CSV_HEADER}\n${lines.join('\n')}${lines.length ? '\n' : ''}`
 }
@@ -311,14 +323,35 @@ function carrierName(value: unknown): string {
   return text.slice(0, 200)
 }
 
+function statusErrorText(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value))
+  if (typeof value === 'string') {
+    const code = value.trim()
+    return code ? code.slice(0, 64) : null
+  }
+  return null
+}
+
+function failedHit(error: string, checkedAt: string): LookupHit {
+  return {
+    valid: false,
+    lineType: 'unknown',
+    carrier: '',
+    lineStatus: 'unknown',
+    lineStatusError: null,
+    error,
+    checkedAt,
+  }
+}
+
 function parseLookupBody(body: unknown, checkedAt: string): LookupHit {
   const record = body && typeof body === 'object' ? body as Record<string, unknown> : null
-  if (!record || typeof record.valid !== 'boolean') {
-    return { valid: false, lineType: 'unknown', carrier: '', error: 'lookup_failed', checkedAt }
-  }
+  if (!record || typeof record.valid !== 'boolean') return failedHit('lookup_failed', checkedAt)
+  const parsed = parseTwilioLookupPayload(record)
   const intelligence = (record.line_type_intelligence ?? record.lineTypeIntelligence) as Record<string, unknown> | null
   const carrier = carrierName(intelligence?.carrier_name ?? intelligence?.carrierName)
   const lineType = mapLookupLineType(intelligence?.type ?? intelligence?.Type)
+  const lineStatusError = statusErrorText(parsed.raw.line_status_error_code)
   const typeError = intelligence?.error_code ?? intelligence?.errorCode
   if (typeError !== null && typeError !== undefined && String(typeError).trim()) {
     const code = String(typeError).trim()
@@ -326,11 +359,21 @@ function parseLookupBody(body: unknown, checkedAt: string): LookupHit {
       valid: record.valid,
       lineType: 'unknown',
       carrier,
+      lineStatus: parsed.mappedStatus,
+      lineStatusError,
       error: /^\d{1,6}$/.test(code) ? `line_type_${code}` : 'line_type_error',
       checkedAt,
     }
   }
-  return { valid: record.valid, lineType, carrier, error: null, checkedAt }
+  return {
+    valid: record.valid,
+    lineType,
+    carrier,
+    lineStatus: parsed.mappedStatus,
+    lineStatusError,
+    error: null,
+    checkedAt,
+  }
 }
 
 async function lookupNumber(input: {
@@ -357,21 +400,15 @@ async function lookupNumber(input: {
         await input.sleep(retryDelay(attempt, response.headers.get('retry-after')))
         continue
       }
-      if (response.status === 429) {
-        return { valid: false, lineType: 'unknown', carrier: '', error: 'rate_limited', checkedAt }
-      }
-      if (response.status === 404) {
-        return { valid: false, lineType: 'unknown', carrier: '', error: 'not_found', checkedAt }
-      }
-      if (response.status < 200 || response.status >= 300) {
-        return { valid: false, lineType: 'unknown', carrier: '', error: 'lookup_failed', checkedAt }
-      }
+      if (response.status === 429) return failedHit('rate_limited', checkedAt)
+      if (response.status === 404) return failedHit('not_found', checkedAt)
+      if (response.status < 200 || response.status >= 300) return failedHit('lookup_failed', checkedAt)
       return parseLookupBody(JSON.parse(text.slice(0, 100_000)), checkedAt)
     } catch {
-      return { valid: false, lineType: 'unknown', carrier: '', error: 'lookup_failed', checkedAt }
+      return failedHit('lookup_failed', checkedAt)
     }
   }
-  return { valid: false, lineType: 'unknown', carrier: '', error: 'lookup_failed', checkedAt: input.now().toISOString() }
+  return failedHit('lookup_failed', input.now().toISOString())
 }
 
 async function mapPool<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
@@ -395,6 +432,8 @@ function rowFromHit(e164: string, hit: LookupHit): LineTypeLookupRow {
     line_type: hit.lineType,
     carrier: hit.carrier,
     checked_at: hit.checkedAt,
+    line_status: hit.lineStatus,
+    line_status_error: hit.lineStatusError,
     error: hit.error,
   }
 }
@@ -427,13 +466,7 @@ export async function runLineTypeLookup(input: {
   if (unique.length === 0) {
     const startIso = chicagoDayStart(now()).toISOString()
     const existing = await listReservations(db, startIso)
-    const rows = normalized.map((phone) => rowFromHit(phone.input, {
-      valid: false,
-      lineType: 'unknown',
-      carrier: '',
-      error: 'invalid_phone',
-      checkedAt,
-    }))
+    const rows = normalized.map((phone) => rowFromHit(phone.input, failedHit('invalid_phone', checkedAt)))
     return {
       status: 200,
       body: {
@@ -507,7 +540,7 @@ export async function runLineTypeLookup(input: {
         body: {
           ok: false,
           error: 'daily_lookup_cap',
-          message: `This request would pass today's ${LINE_TYPE_LOOKUP_DAILY_CAP} Twilio Lookup line-type checks.`,
+          message: `This request would pass today's ${LINE_TYPE_LOOKUP_DAILY_CAP} Twilio Lookup checks.`,
           usage: usage({
             day,
             limit,
@@ -563,7 +596,7 @@ export async function runLineTypeLookup(input: {
           body: {
             ok: false,
             error: 'daily_lookup_cap',
-            message: `This request would pass today's ${LINE_TYPE_LOOKUP_DAILY_CAP} Twilio Lookup line-type checks.`,
+            message: `This request would pass today's ${LINE_TYPE_LOOKUP_DAILY_CAP} Twilio Lookup checks.`,
             usage: usage({ day, limit, usedToday, counted: 0, costGuard }),
           },
         }
@@ -583,15 +616,7 @@ export async function runLineTypeLookup(input: {
   }))
   const byPhone = new Map(unique.map((e164, index) => [e164, hits[index]]))
   const rows = normalized.map((phone) => {
-    if (!phone.e164) {
-      return rowFromHit(phone.input, {
-        valid: false,
-        lineType: 'unknown',
-        carrier: '',
-        error: 'invalid_phone',
-        checkedAt,
-      })
-    }
+    if (!phone.e164) return rowFromHit(phone.input, failedHit('invalid_phone', checkedAt))
     return rowFromHit(phone.e164, byPhone.get(phone.e164) as LookupHit)
   })
 

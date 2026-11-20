@@ -269,8 +269,8 @@ export function registerCrmMcpTools(server: McpServer) {
   server.registerTool(
     'crm_line_type_lookup',
     {
-      title: 'Twilio line type lookup',
-      description: 'Look up Twilio line type intelligence for up to 200 phone numbers (E.164 or 10-digit US). Argument: phones, a list of strings. Returns one row per input number (e164, valid, line_type, carrier, checked_at, error) and a csv string with header e164,valid,line_type,carrier,checked_at. Dedupes numbers inside the request and refuses the call before today\'s America/Chicago lookups would pass 1,000. Uses the CRM server\'s existing Twilio credentials. Does not write prospect, phone, DNC, opt-out, or TCPA records.',
+      title: 'Twilio line status and type lookup',
+      description: 'Look up Twilio line status and line type intelligence for up to 200 phone numbers (E.164 or 10-digit US). Argument: phones, a list of strings. Each number is one Lookup v2 request for line_status and line_type_intelligence, the same packages as lookupPhoneLine, at $0.015 ($0.007 line status + $0.008 line type). Returns one row per input number (e164, valid, line_type, carrier, checked_at, line_status, line_status_error, error) and a csv string with header e164,valid,line_type,carrier,checked_at,line_status,line_status_error. line_status is active, inactive, unreachable, or unknown. Dedupes numbers inside the request and refuses the call before today\'s America/Chicago lookups would pass 1,000. Uses the CRM server\'s existing Twilio credentials. Does not write prospect, phone, DNC, opt-out, or TCPA records.',
       inputSchema: {
         phones: z.array(z.string().min(1).max(40)).min(1).max(200),
       },
