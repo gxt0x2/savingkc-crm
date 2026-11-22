@@ -11,9 +11,11 @@ import {
   buildInboundAttribution,
   parseMojoCallbackNumbers,
   type InboundChannel,
+  type PhoneClickMatch,
 } from '@/lib/attribution/inbound-attribution'
+import { decidePhoneClickMatch, PHONE_CLICK_WINDOW_MS, type PhoneClickRow } from '@/lib/attribution/phone-click-match'
 import type { LeadAttribution } from '@/lib/attribution/lead-attribution'
-import { MOJO_CALLER_ID_NUMBERS } from '@/lib/twilio-numbers'
+import { findTwilioNumber, MOJO_CALLER_ID_NUMBERS, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 
 const CALL_SID = /^CA[0-9a-f]{32}$/i
 
@@ -33,6 +35,11 @@ export type InboundLeadAttributionDeps = {
   isProspectPhone: (phone: string) => Promise<boolean>
   fetchForwardedFrom: (callSid: string) => Promise<string | null>
   mojoCallbackNumbers: () => string[]
+  /** Website phone taps in the window before the call (G2). */
+  findPhoneClicks: (sinceIso: string) => Promise<PhoneClickRow[]>
+  /** Channel assigned to the dialed number in Settings (G7). */
+  loadNumberChannel: (number: string) => Promise<{ channel: string; campaign: string | null } | null>
+  linkJourney: (leadId: string, sessionId: string, visitorId: string | null) => Promise<void>
 }
 
 function cleanEnv(name: string): string {
@@ -72,6 +79,32 @@ const defaultDeps: InboundLeadAttributionDeps = {
   fetchForwardedFrom: fetchForwardedFromTwilio,
   // MOJO_CALLBACK_NUMBERS adds caller IDs Mojo rotates in before the list here is updated.
   mojoCallbackNumbers: () => [...new Set([...MOJO_CALLER_ID_NUMBERS, ...parseMojoCallbackNumbers(process.env.MOJO_CALLBACK_NUMBERS)])],
+  async findPhoneClicks(sinceIso) {
+    const { supabase } = await import('@/lib/supabase-lazy')
+    const { data, error } = await supabase
+      .from('ppc_tracking_events')
+      .select('session_id,visitor_id,traffic_source,utm_source,utm_medium,utm_campaign,gclid,page_path')
+      .eq('event_name', 'phone_click')
+      .not('is_test', 'is', true)
+      .gte('event_time', sinceIso)
+      .limit(50)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as PhoneClickRow[]
+  },
+  async loadNumberChannel(number) {
+    const { supabase } = await import('@/lib/supabase-lazy')
+    const { data, error } = await supabase
+      .from('tracking_number_channels')
+      .select('channel,campaign')
+      .eq('number', number)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    return data ? { channel: String(data.channel), campaign: data.campaign ?? null } : null
+  },
+  async linkJourney(leadId, sessionId, visitorId) {
+    const { linkJourneyToLead } = await import('@/lib/ppc/journey-link')
+    await linkJourneyToLead({ leadId, sessionId, visitorId })
+  },
 }
 
 function hasStandardRecord(value: unknown): boolean {
@@ -98,7 +131,9 @@ export async function stampInboundLeadAttribution(
     if (hasStandardRecord(await deps.loadAttribution(leadId))) return false
 
     const callSid = input.callSid && CALL_SID.test(input.callSid) ? input.callSid : null
-    const [prospectMatched, forwardedFrom] = await Promise.all([
+    const called = normalizeTwilioNumber(input.calledNumber)
+    const isPublicNumber = findTwilioNumber(called)?.purpose === 'business'
+    const [prospectMatched, forwardedFrom, phoneClick, numberChannel] = await Promise.all([
       input.prospectMatched !== undefined
         ? input.prospectMatched
         : input.callerNumber
@@ -107,16 +142,30 @@ export async function stampInboundLeadAttribution(
       input.channel === 'call' && callSid
         ? quietly('forwarded-from lookup', () => deps.fetchForwardedFrom(callSid), null)
         : null,
+      input.channel === 'call' && isPublicNumber
+        ? quietly('phone click lookup', async (): Promise<PhoneClickMatch | null> => {
+          const since = new Date(Date.now() - PHONE_CLICK_WINDOW_MS).toISOString()
+          return decidePhoneClickMatch(await deps.findPhoneClicks(since)).match
+        }, null)
+        : null,
+      called ? quietly('number channel lookup', () => deps.loadNumberChannel(called), null) : null,
     ])
 
-    await deps.saveAttribution(leadId, buildInboundAttribution({
+    const attribution = buildInboundAttribution({
       channel: input.channel,
       calledNumber: input.calledNumber,
       callSid,
       forwardedFrom,
       prospectMatched,
       mojoCallbackNumbers: deps.mojoCallbackNumbers(),
-    }))
+      phoneClick,
+      numberChannel,
+    })
+    await deps.saveAttribution(leadId, attribution)
+    // A call credited to a website phone tap ties that visitor's visits to the lead.
+    if (phoneClick && attribution.derived_from === 'inbound:phone_click_match') {
+      await quietly('journey link', () => deps.linkJourney(leadId, phoneClick.sessionId, phoneClick.visitorId), undefined)
+    }
     return true
   } catch (error) {
     console.error('[inbound attribution] stamp failed:', error instanceof Error ? error.message : error)

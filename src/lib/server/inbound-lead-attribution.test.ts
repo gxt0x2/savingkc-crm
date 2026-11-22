@@ -14,6 +14,9 @@ function deps(overrides: Partial<InboundLeadAttributionDeps> = {}) {
     isProspectPhone: async () => false,
     fetchForwardedFrom: async () => null,
     mojoCallbackNumbers: () => ['+18165550101'],
+    findPhoneClicks: async () => [],
+    loadNumberChannel: async () => null,
+    linkJourney: async () => {},
     ...overrides,
   }
   return { d, saved }
@@ -78,5 +81,51 @@ describe('stampInboundLeadAttribution', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', calledNumber: '+18164292900' }, d)).toBe(false)
     log.mockRestore()
+  })
+
+  const click = { session_id: 'sess-0001', visitor_id: 'vis-0001', traffic_source: 'google_ads', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'tax-2026', gclid: 'Cj0KCQ', page_path: '/what-i-owe/' }
+
+  it('credits a public-number call to the one website session that tapped the number (G2)', async () => {
+    const linked: unknown[] = []
+    const { d, saved } = deps({ findPhoneClicks: async () => [click, { ...click }], linkJourney: async (...args) => { linked.push(args) } })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', callerNumber: '+19135551212', calledNumber: '+18164292900', callSid: SID }, d)
+    expect(saved[0].attribution).toMatchObject({
+      derived_from: 'inbound:phone_click_match',
+      first_touch: { source: 'google', medium: 'cpc', campaign: 'tax-2026', gclid: 'Cj0KCQ', landing_page: '/what-i-owe/' },
+      site_session_id: 'sess-0001',
+      site_visitor_id: 'vis-0001',
+    })
+    expect(linked).toEqual([['L1', 'sess-0001', 'vis-0001']])
+  })
+
+  it('gives no website credit when two sessions tapped, and falls back to the number channel (G7)', async () => {
+    const linked: unknown[] = []
+    const { d, saved } = deps({
+      findPhoneClicks: async () => [click, { ...click, session_id: 'sess-0002' }],
+      loadNumberChannel: async () => ({ channel: 'public_number', campaign: 'website and brand' }),
+      linkJourney: async (...args) => { linked.push(args) },
+    })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', calledNumber: '+18164292900', callSid: SID }, d)
+    expect(saved[0].attribution).toMatchObject({
+      derived_from: 'inbound:number_channel',
+      first_touch: { source: 'public_number', medium: 'phone', campaign: 'website and brand' },
+    })
+    expect(linked).toEqual([])
+  })
+
+  it('keeps a Mojo callback ahead of a phone tap and does not link the journey', async () => {
+    const linked: unknown[] = []
+    const { d, saved } = deps({ fetchForwardedFrom: async () => '+18165550101', findPhoneClicks: async () => [click], linkJourney: async (...args) => { linked.push(args) } })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', calledNumber: '+18164292900', callSid: SID }, d)
+    expect(saved[0].attribution.derived_from).toBe('inbound:forwarded_from')
+    expect(linked).toEqual([])
+  })
+
+  it('only looks for phone taps on the public number', async () => {
+    const findPhoneClicks = vi.fn(async () => [click])
+    const { d, saved } = deps({ findPhoneClicks, loadNumberChannel: async () => ({ channel: 'direct_mail', campaign: 'Nov drop' }) })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'sms', calledNumber: '+18166088770' }, d)
+    expect(findPhoneClicks).not.toHaveBeenCalled()
+    expect(saved[0].attribution).toMatchObject({ derived_from: 'inbound:number_channel', first_touch: { source: 'direct_mail', medium: 'sms', campaign: 'Nov drop' } })
   })
 })

@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { GmailConnect } from '@/components/settings/gmail-connect'
 import { GoogleAdsConnect } from '@/components/settings/google-ads-connect'
+import { NumberChannels } from '@/components/settings/number-channels'
 import { useRouter } from 'next/navigation'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { readViewedAgentEmail, setViewedAgentEmail } from '@/lib/viewed-agent-session'
@@ -257,6 +258,9 @@ export default function SettingsPage() {
 
         {/* Company paid-media connection */}
         <GoogleAdsConnect />
+
+        {/* Marketing channel per phone number (admins only; hidden for others) */}
+        <NumberChannels />
 
         {/* Agent Switcher (Owner only) */}
         {isOwner && allProfiles.length > 1 && (
