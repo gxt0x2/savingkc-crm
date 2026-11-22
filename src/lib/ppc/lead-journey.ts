@@ -21,6 +21,17 @@ export type JourneyRow = {
   page_location: string | null
   traffic_source: string | null
   payload: Record<string, unknown> | null
+  session_id?: string | null
+  gclid?: string | null
+}
+
+/** One-line answer to "how did this person find us" (G5). */
+export type JourneySummary = {
+  visits: number
+  webEvents: number
+  firstSeenAt: string | null
+  daysToLead: number | null
+  adClick: boolean
 }
 
 const HIDDEN = new Set(['skc_phone_number_selected', 'ppc_landing_request'])
@@ -46,7 +57,26 @@ function detailFor(row: JourneyRow): string | null {
     case 'contact_started': return str(p.field) ? `typed ${str(p.field)}` : null
     case 'scroll_depth': return typeof p.percent === 'number' ? `${p.percent}%` : null
     case 'page_view': return str(p.ai_source) && p.ai_source !== 'none' ? `via ${str(p.ai_source)}` : null
+    case 'tool_used':
+    case 'tool_engaged': return str(p.tool)?.replace(/_/g, ' ') ?? null
+    case 'faq_opened': return str(p.question)
+    case 'video_started': return str(p.video_id)
     default: return null
+  }
+}
+
+export function summarizeJourney(rows: JourneyRow[], leadCreatedAt: string | null): JourneySummary {
+  const real = rows.filter((row) => !HIDDEN.has(row.event_name))
+  const sessions = new Set(real.map((row) => row.session_id).filter(Boolean))
+  const times = real.map((row) => Date.parse(row.event_time)).filter(Number.isFinite)
+  const first = times.length ? Math.min(...times) : null
+  const created = leadCreatedAt ? Date.parse(leadCreatedAt) : NaN
+  return {
+    visits: sessions.size || (real.length ? 1 : 0),
+    webEvents: real.length,
+    firstSeenAt: first === null ? null : new Date(first).toISOString(),
+    daysToLead: first !== null && Number.isFinite(created) ? Math.max(0, Math.floor((created - first) / 86_400_000)) : null,
+    adClick: real.some((row) => Boolean(row.gclid)),
   }
 }
 
@@ -75,12 +105,12 @@ type Db = {
   }
 }
 
-export async function loadLeadJourney(db: Db, leadId: string): Promise<{ journey: JourneyStep[]; sessionId: string | null } | { error: string; status: number }> {
-  const leadRes = await db.from('leads').select('id, session_id').eq('id', leadId).maybeSingle!()
+export async function loadLeadJourney(db: Db, leadId: string): Promise<{ journey: JourneyStep[]; sessionId: string | null; summary: JourneySummary } | { error: string; status: number }> {
+  const leadRes = await db.from('leads').select('id, session_id, created_at').eq('id', leadId).maybeSingle!()
   if (leadRes.error) return { error: leadRes.error.message, status: 500 }
-  const lead = leadRes.data as { id: string; session_id: string | null } | null
+  const lead = leadRes.data as { id: string; session_id: string | null; created_at?: string | null } | null
   if (!lead) return { error: 'Lead not found', status: 404 }
-  const cols = 'event_name, event_time, page_path, page_location, traffic_source, payload'
+  const cols = 'event_name, event_time, page_path, page_location, traffic_source, payload, session_id, gclid'
   const queries = [db.from('ppc_tracking_events').select(cols).eq('lead_id', leadId).eq!('is_test', false).order('event_time', { ascending: true }).limit(200)]
   if (lead.session_id) queries.push(db.from('ppc_tracking_events').select(cols).eq('session_id', lead.session_id).eq!('is_test', false).order('event_time', { ascending: true }).limit(200))
   const results = await Promise.all(queries)
@@ -94,5 +124,5 @@ export async function loadLeadJourney(db: Db, leadId: string): Promise<{ journey
     seen.add(key)
     rows.push(row)
   }
-  return { journey: buildLeadJourney(rows), sessionId: lead.session_id }
+  return { journey: buildLeadJourney(rows), sessionId: lead.session_id, summary: summarizeJourney(rows, lead.created_at ?? null) }
 }

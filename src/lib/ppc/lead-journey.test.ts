@@ -59,3 +59,40 @@ describe('loadLeadJourney', () => {
     expect(await loadLeadJourney(f.db as never, 'nope')).toEqual({ error: 'Lead not found', status: 404 })
   })
 })
+
+import { summarizeJourney } from './lead-journey'
+import { buildCrmTimeline } from './lead-crm-timeline'
+
+describe('journey summary (G5)', () => {
+  it('counts visits by session, days to lead and ad clicks', () => {
+    const rows = [
+      { ...row('page_view', '2026-11-02T15:00:00Z'), session_id: 's1', gclid: 'Cj0' },
+      { ...row('tool_used', '2026-11-02T15:05:00Z', { tool: 'tax_lookup' }), session_id: 's1', gclid: null },
+      { ...row('page_view', '2026-11-05T10:00:00Z'), session_id: 's2', gclid: null },
+      { ...row('skc_phone_number_selected', '2026-11-01T10:00:00Z'), session_id: 's0', gclid: null },
+    ]
+    expect(summarizeJourney(rows, '2026-11-05T10:20:00Z')).toEqual({
+      visits: 2, webEvents: 3, firstSeenAt: '2026-11-02T15:00:00.000Z', daysToLead: 2, adClick: true,
+    })
+    expect(buildLeadJourney(rows).find((s) => s.event === 'tool_used')?.detail).toBe('tax lookup')
+  })
+
+  it('is empty without web events', () => {
+    expect(summarizeJourney([], '2026-11-05T10:20:00Z')).toEqual({ visits: 0, webEvents: 0, firstSeenAt: null, daysToLead: null, adClick: false })
+  })
+})
+
+describe('CRM timeline (G5)', () => {
+  it('drops web rows and bookkeeping, keeps order, trims detail', () => {
+    const steps = buildCrmTimeline([
+      { occurred_at: '2026-11-05T12:00:00Z', kind: 'stage', event: 'advance', detail: 'new → contacted' },
+      { occurred_at: '2026-11-05T10:20:00Z', kind: 'crm', event: 'lead_created', detail: 'website_form' },
+      { occurred_at: '2026-11-05T10:25:00Z', kind: 'activity', event: 'reprocess', detail: 'x' },
+      { occurred_at: '2026-11-05T10:00:00Z', kind: 'web', event: 'page_view', detail: '/' },
+      { occurred_at: '2026-11-05T11:00:00Z', kind: 'activity', event: 'call', detail: `  Talked   about ${'x'.repeat(200)}` },
+    ])
+    expect(steps.map((s) => s.event)).toEqual(['lead_created', 'call', 'advance'])
+    expect(steps[1].detail?.startsWith('Talked about')).toBe(true)
+    expect(steps[1].detail?.length).toBe(140)
+  })
+})
