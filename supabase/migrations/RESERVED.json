@@ -32,5 +32,6 @@
   {"version":"20261220130000","pr":825,"owner":"gxt0x2","note":"calling pool v1"},
   {"version":"20261221120000","pr":834,"owner":"gxt0x2","note":"market 90+ days and KS expired release"},
   {"version":"20261222120000","pr":840,"owner":"gxt0x2","note":"tracking number channels"},
-  {"version":"20261222130000","pr":842,"owner":"gxt0x2","note":"marketing outcome attribution"}
+  {"version":"20261222130000","pr":842,"owner":"gxt0x2","note":"marketing outcome attribution"},
+  {"version":"20261222140000","pr":844,"owner":"gxt0x2","note":"mail drops"}
 ]

@@ -8,7 +8,8 @@
 //   3. whether the caller's number is on a prospect list we hold
 //   4. a website phone click: exactly one site session tapped the public
 //      number in the 10 minutes before the call (G2)
-//   5. the channel assigned to the dialed number in Settings (G7)
+//   5. the channel assigned to the dialed number in Settings (G7); mail,
+//      sign and referral numbers are checked before the prospect match (G8)
 // When none apply the origin is left unknown. Nothing is guessed.
 
 import { getGoogleAdsPhoneProfile } from '@/lib/call-quality-events'
@@ -49,6 +50,9 @@ export function parseMojoCallbackNumbers(raw: string | null | undefined): string
     .map((value) => normalizeTwilioNumber(value))
     .filter((value): value is string => Boolean(value))
 }
+
+/** Channels whose numbers appear on one kind of piece only. */
+const DEDICATED_NUMBER_CHANNELS = new Set(['direct_mail', 'signs', 'referral'])
 
 export function buildInboundAttribution(input: InboundAttributionInput): LeadAttribution {
   const called = normalizeTwilioNumber(input.calledNumber)
@@ -92,6 +96,16 @@ export function buildInboundAttribution(input: InboundAttributionInput): LeadAtt
   }
   if (forwardedFrom && mojoNumbers.has(forwardedFrom)) {
     return withOrigin('forwarded_from', { source: 'cold_call', medium: 'callback' }, { provider: 'mojo' })
+  }
+  // A number printed only on mail, signs or a referral piece is stronger
+  // evidence than the caller being on a prospect list: mailed sellers are on
+  // those lists too (G8).
+  if (input.numberChannel && DEDICATED_NUMBER_CHANNELS.has(input.numberChannel.channel)) {
+    return withOrigin('number_channel', {
+      source: input.numberChannel.channel,
+      medium: input.channel === 'sms' ? 'sms' : 'phone',
+      campaign: input.numberChannel.campaign || undefined,
+    })
   }
   if (input.prospectMatched) {
     return withOrigin('prospect_phone_match', { source: 'cold_call', medium: 'callback' })
