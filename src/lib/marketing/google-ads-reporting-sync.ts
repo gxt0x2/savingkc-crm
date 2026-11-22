@@ -372,6 +372,67 @@ async function upsertInChunks(
   }
 }
 
+/** Start of today in Chicago, as an ISO instant (DST-safe enough for a daily gate). */
+export function chicagoDayStartIso(now = new Date()): string {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const probe = new Date(`${day}T12:00:00Z`)
+  const offsetHours = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hour12: false }).format(probe)) - 12
+  return new Date(Date.parse(`${day}T00:00:00Z`) - offsetHours * 3600_000).toISOString()
+}
+
+/**
+ * Catch-up after an outage: when the newest stored day is older than the
+ * normal window, sync from the day after it, at most 30 days per run, until
+ * the table reaches the normal window again.
+ */
+export function resolveCatchUpWindow(input: { lastStoredDate: string | null; since: string; until: string; maxDays?: number }): { since: string; until: string; catchUp: boolean } {
+  const { lastStoredDate, since, until } = input
+  const maxDays = input.maxDays ?? 30
+  if (!lastStoredDate || !/^\d{4}-\d{2}-\d{2}$/.test(lastStoredDate)) return { since, until, catchUp: false }
+  const next = new Date(`${lastStoredDate}T12:00:00Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  const from = next.toISOString().slice(0, 10)
+  if (from >= since) return { since, until, catchUp: false }
+  const end = new Date(`${from}T12:00:00Z`)
+  end.setUTCDate(end.getUTCDate() + maxDays - 1)
+  const to = end.toISOString().slice(0, 10)
+  return { since: from, until: to < until ? to : until, catchUp: true }
+}
+
+/** The last day a real (non-dry-run) sync covered successfully. Days with no spend store no rows, so runs are the truth. */
+export async function readLastStoredCampaignDate(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('google_ads_reporting_sync_runs')
+    .select('until_date')
+    .eq('status', 'success')
+    .eq('dry_run', false)
+    .order('until_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) return null
+  return text(record(data).until_date) || null
+}
+
+export const REAUTH_ERROR_MESSAGE = 'Google Ads authorization expired. Reconnect Google Ads in Settings.'
+
+/**
+ * While the saved Google Ads login needs reconnecting, log one failed run per
+ * Chicago day instead of one every ten minutes. True = skip this run quietly.
+ */
+async function reauthAlreadyLoggedToday(config: GoogleAdsReportingConfig, supabase: SupabaseClient): Promise<boolean> {
+  if (!config.refreshTokenUserEmail) return false
+  const health = await readOAuthHealth(supabase, 'google_ads', config.refreshTokenUserEmail)
+  if (health?.status !== 'reauthorization_required') return false
+  const { count, error } = await supabase
+    .from('google_ads_reporting_sync_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'failed')
+    .eq('error', REAUTH_ERROR_MESSAGE)
+    .gte('started_at', chicagoDayStartIso())
+  if (error) return false
+  return (count ?? 0) > 0
+}
+
 async function startSyncRun(
   supabase: SupabaseClient,
   sinceDate: string,
@@ -426,6 +487,7 @@ export async function runGoogleAdsReportingSync(
 
   const config = readGoogleAdsConfig()
   const supabase = supabaseAdmin()
+  if (await reauthAlreadyLoggedToday(config, supabase)) throw new GoogleAdsReauthorizationRequiredError()
   const runId = await startSyncRun(supabase, since, until, dryRun)
 
   try {

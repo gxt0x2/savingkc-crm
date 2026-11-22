@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { crmEmailForConnectedGoogleAccount, decodeGoogleOAuthState } from '@/lib/google-oauth-state'
 import { markOAuthConnected } from '@/lib/oauth-health'
 import { ensureGmailWatch } from '@/lib/gmail-watch'
+import { requeueGoogleAdsDeadLetters } from '@/lib/ppc/requeue-after-reconnect'
 
 type GoogleOAuthProvider = 'google' | 'google_ads'
 
@@ -141,6 +142,11 @@ export async function GET(req: NextRequest) {
   }
 
   await markOAuthConnected(db, provider, googleEmail)
+
+  if (provider === 'google_ads') {
+    const requeued = await requeueGoogleAdsDeadLetters(db)
+    if (requeued) console.log(`[oauth/callback] requeued ${requeued} Google Ads conversions after reconnect`)
+  }
 
   if (provider === 'google') {
     try {
