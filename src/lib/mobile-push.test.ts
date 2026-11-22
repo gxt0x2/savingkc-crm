@@ -156,6 +156,23 @@ describe('sendMobilePushToUsers', () => {
     expect(smsMessage).not.toHaveProperty('subtitle')
   })
 
+  it('adds the lock-screen action category for texts and missed calls only', async () => {
+    const send = async (kind: string) => {
+      fetchImpl.mockClear()
+      await sendMobilePushToUsers(['user-ernest'], {
+        title: 'Pat Seller',
+        body: 'Hi',
+        data: { href: '/conversation/lead-1', kind, leadId: 'lead-1', eventId: `${kind}_1` },
+      })
+      return JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body))[0]
+    }
+    expect(await send('inbound_sms')).toMatchObject({ categoryId: 'savingkc_message' })
+    expect(await send('missed_call')).toMatchObject({ categoryId: 'savingkc_missed_call' })
+    expect(await send('voicemail')).toMatchObject({ categoryId: 'savingkc_missed_call' })
+    expect(await send('inbound_email')).not.toHaveProperty('categoryId')
+    expect(await send('new_lead')).not.toHaveProperty('categoryId')
+  })
+
   it('sends the Expo access token when EXPO_ACCESS_TOKEN is set', async () => {
     vi.stubEnv('EXPO_ACCESS_TOKEN', 'expo-secret')
     await sendMobilePushToUsers(['user-ernest'], { title: 'Title', body: 'Body' })

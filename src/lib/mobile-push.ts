@@ -15,6 +15,17 @@ export type MobilePushPayload = {
   data?: MobilePushData
 }
 
+/**
+ * Lock-screen action set registered by the SavingKC mobile app.
+ * Texts get Reply / Mark read; missed calls and voicemail get Call back / Text back.
+ * Must match `NOTIFICATION_CATEGORY` in savingkc-mobile-crm `src/notificationActions.ts`.
+ */
+export function mobilePushCategoryId(kind: string | undefined): string | undefined {
+  if (kind === 'inbound_sms') return 'savingkc_message'
+  if (kind === 'missed_call' || kind === 'voicemail') return 'savingkc_missed_call'
+  return undefined
+}
+
 type MobilePushDevice = {
   token: string
   user_id: string
@@ -158,7 +169,7 @@ function scheduleExpoReceiptCheck(pending: PendingExpoReceipt[]): void {
 }
 
 async function postExpoBatch(
-  messages: Array<{ to: string; title: string; subtitle?: string; body: string; data: MobilePushData }>,
+  messages: Array<{ to: string; title: string; subtitle?: string; body: string; categoryId?: string; data: MobilePushData }>,
 ): Promise<{ sent: number; unregistered: string[] }> {
   const response = await fetch(EXPO_PUSH_URL, {
     method: 'POST',
@@ -267,11 +278,13 @@ export async function sendMobilePushToUsers(
       (device) => typeof device.token === 'string' && device.token.length > 0 && typeof device.user_id === 'string' && device.user_id.length > 0,
     )
     const subtitle = payload.subtitle?.trim()
+    const categoryId = mobilePushCategoryId(payload.data?.kind)
     const messages = devices.map((device) => ({
       to: device.token,
       title: payload.title,
       ...(subtitle ? { subtitle } : {}),
       body: payload.body,
+      ...(categoryId ? { categoryId } : {}),
       data: {
         ...(payload.data || {}),
         recipientUserId: device.user_id,
