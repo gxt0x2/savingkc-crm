@@ -12,7 +12,9 @@ import { resolveGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 import {
   GOOGLE_ADS_CLEANUP_ONLY_PPC_EVENT_NAMES,
   GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES,
+  GOOGLE_ADS_DEAL_PPC_EVENT_NAMES,
   GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES,
+  isGoogleAdsDealPpcEvent,
   isGoogleAdsApprovalRequiredPpcEvent,
   isGoogleAdsExportablePpcEvent,
   isGoogleAdsFactualPpcEvent,
@@ -736,7 +738,11 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   const customerId = normalizeCustomerId(readEnv(env, 'GOOGLE_ADS_CUSTOMER_ID'))
   const actionMappings = customerId ? loadConversionActions(env, customerId) : {}
   const configuredActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => Boolean(actionMappings[eventName]))
-  const missingActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => !actionMappings[eventName])
+  // Deal-stage events (G6) are optional: without a mapping they fail loudly
+  // per row, but they never mark the whole Google Ads export as not ready.
+  const missingActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES
+    .filter((eventName) => !isGoogleAdsDealPpcEvent(eventName) && !actionMappings[eventName])
+  const missingDealActionMappings = GOOGLE_ADS_DEAL_PPC_EVENT_NAMES.filter((eventName) => !actionMappings[eventName])
   const google = googleEnabled
     ? readGoogleAdsConfig(env)
     : { config: null, missing: [] }
@@ -766,6 +772,9 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   }
   if (googleEnabled && missingActionMappings.length > 0) {
     warnings.push(`Direct Google Ads API upload is missing ${missingActionMappings.length} conversion action mapping${missingActionMappings.length === 1 ? '' : 's'}.`)
+  }
+  if (googleEnabled && missingDealActionMappings.length > 0) {
+    warnings.push(`Contract and close conversions wait for their Google Ads conversion action mapping (${missingDealActionMappings.map((eventName) => `GOOGLE_ADS_CONVERSION_ACTION_${eventName.toUpperCase()}`).join(', ')}).`)
   }
   if (stapeEnabled && !stapeReady) {
     warnings.push('Stape/server GTM is enabled but its endpoint is not configured.')
@@ -943,7 +952,7 @@ export function buildGoogleAdsUploadPlan(
     return {
       kind: 'skip',
       reason: `Missing conversion action mapping for ${row.event_name}`,
-      hardFailure: row.optimization_role === 'primary',
+      hardFailure: row.optimization_role === 'primary' || isGoogleAdsDealPpcEvent(row.event_name),
     }
   }
 

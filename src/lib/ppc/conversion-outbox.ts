@@ -8,9 +8,11 @@ export type PpcConversionEventName =
   | 'lead_submitted'
   | 'qualified_lead'
   | 'appointment_booked'
+  | 'contract_signed'
+  | 'deal_closed'
   | CallQualityEventName
 
-export type PpcConversionCategory = 'form' | 'call' | 'appointment' | 'phone'
+export type PpcConversionCategory = 'form' | 'call' | 'appointment' | 'phone' | 'deal'
 export type PpcOptimizationRole = 'primary' | 'secondary' | 'diagnostic'
 export type PpcClickIdType = 'gclid' | 'gbraid' | 'wbraid'
 

@@ -6,6 +6,9 @@
 //   1. the dialed number, when it is a Google Ads or cold-call callback line
 //   2. the number the call was forwarded from, when it is a known Mojo line
 //   3. whether the caller's number is on a prospect list we hold
+//   4. a website phone click: exactly one site session tapped the public
+//      number in the 10 minutes before the call (G2)
+//   5. the channel assigned to the dialed number in Settings (G7)
 // When none apply the origin is left unknown. Nothing is guessed.
 
 import { getGoogleAdsPhoneProfile } from '@/lib/call-quality-events'
@@ -13,7 +16,18 @@ import { findTwilioNumber, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 import { nonWebAttribution, type LeadAttribution } from './lead-attribution'
 
 export type InboundChannel = 'call' | 'sms'
-export type InboundEvidence = 'tracking_number' | 'forwarded_from' | 'prospect_phone_match'
+export type InboundEvidence = 'tracking_number' | 'forwarded_from' | 'prospect_phone_match' | 'phone_click_match' | 'number_channel'
+
+/** The one website session that tapped the number just before the call. */
+export type PhoneClickMatch = {
+  sessionId: string
+  visitorId: string | null
+  source: string | null
+  medium: string | null
+  campaign: string | null
+  gclid: string | null
+  landingPage: string | null
+}
 
 export type InboundAttributionInput = {
   channel: InboundChannel
@@ -23,6 +37,8 @@ export type InboundAttributionInput = {
   prospectMatched?: boolean
   /** Mojo caller-ID lines that forward callbacks to the business line. */
   mojoCallbackNumbers?: readonly string[]
+  phoneClick?: PhoneClickMatch | null
+  numberChannel?: { channel: string; campaign: string | null } | null
   now?: string
 }
 
@@ -79,6 +95,27 @@ export function buildInboundAttribution(input: InboundAttributionInput): LeadAtt
   }
   if (input.prospectMatched) {
     return withOrigin('prospect_phone_match', { source: 'cold_call', medium: 'callback' })
+  }
+  if (input.phoneClick) {
+    const click = input.phoneClick
+    return {
+      ...withOrigin('phone_click_match', {
+        source: click.source || (click.gclid ? 'google' : 'website'),
+        medium: click.medium || (click.gclid ? 'cpc' : 'phone_click'),
+        campaign: click.campaign || undefined,
+        gclid: click.gclid || undefined,
+        landing_page: click.landingPage || undefined,
+      }),
+      site_session_id: click.sessionId,
+      ...(click.visitorId ? { site_visitor_id: click.visitorId } : {}),
+    }
+  }
+  if (input.numberChannel) {
+    return withOrigin('number_channel', {
+      source: input.numberChannel.channel,
+      medium: input.channel === 'sms' ? 'sms' : 'phone',
+      campaign: input.numberChannel.campaign || undefined,
+    })
   }
   return { ...base, derived_from: 'inbound:unknown_origin' }
 }
