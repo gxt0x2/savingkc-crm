@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { finalizeFundedClose, finalizeVerifiedFallout } from '@/lib/server/crm-operating-handoffs'
+import { queuePpcDealConversion } from '@/lib/ppc/deal-conversion'
 import {
   buildFundingMetrics,
   nextBusinessDayDueAt,
@@ -164,6 +165,16 @@ export async function POST(
       const deal = finalized.deal
 
       await db.from('deal_pages').update({ is_active: false, updated_at: recordedAt }).eq('lead_id', current.lead_id)
+
+      if (firstCloseout && current.lead_id) {
+        await queuePpcDealConversion({
+          leadId: current.lead_id,
+          eventName: 'deal_closed',
+          occurredAt: input.fundedAt,
+          source: 'disposition_closeout',
+          referenceId: id,
+        }).catch((error) => console.error('[closeout] deal conversion queue failed:', error))
+      }
 
       if (firstCloseout) {
         await Promise.all([

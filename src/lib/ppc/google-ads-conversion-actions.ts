@@ -93,6 +93,22 @@ export const SEARCH_2026_OFFLINE_ACTION_SPECS: GoogleAdsOfflineActionSpec[] = [
     defaultValue: 3,
   },
   {
+    eventName: 'contract_signed',
+    envKey: envKey('contract_signed'),
+    name: 'Search 2026 - Contract Signed',
+    type: 'UPLOAD_CLICKS',
+    category: 'CONVERTED_LEAD',
+    defaultValue: 3,
+  },
+  {
+    eventName: 'deal_closed',
+    envKey: envKey('deal_closed'),
+    name: 'Search 2026 - Deal Closed',
+    type: 'UPLOAD_CLICKS',
+    category: 'CONVERTED_LEAD',
+    defaultValue: 3,
+  },
+  {
     eventName: 'call_connected_60s',
     envKey: envKey('call_connected_60s'),
     name: 'Search 2026 - Call Connected 60s',
