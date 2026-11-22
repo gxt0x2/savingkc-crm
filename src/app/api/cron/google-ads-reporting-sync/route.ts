@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import {
   GoogleAdsReauthorizationRequiredError,
+  readLastStoredCampaignDate,
+  resolveCatchUpWindow,
   runGoogleAdsReportingSync,
 } from '@/lib/marketing/google-ads-reporting-sync'
 
@@ -48,8 +50,17 @@ async function handle(req: NextRequest) {
   const dryRun = parseBool(url.searchParams.get('dryRun'))
   const today = chicagoDate()
   const lookbackDays = readLookbackDays(url.searchParams.get('lookbackDays'))
-  const since = parseDate(url.searchParams.get('since')) || addDays(today, -(lookbackDays - 1))
-  const until = parseDate(url.searchParams.get('until')) || today
+  const explicitSince = parseDate(url.searchParams.get('since'))
+  let since = explicitSince || addDays(today, -(lookbackDays - 1))
+  let until = parseDate(url.searchParams.get('until')) || today
+  let catchUp = false
+  if (!explicitSince && !dryRun) {
+    // After an outage, walk forward from the last stored day, 30 days per run.
+    const window = resolveCatchUpWindow({ lastStoredDate: await readLastStoredCampaignDate(), since, until })
+    since = window.since
+    until = window.until
+    catchUp = window.catchUp
+  }
   const includeSearchTerms = !['0', 'false', 'no'].includes((url.searchParams.get('searchTerms') || '').toLowerCase())
 
   try {
@@ -59,7 +70,7 @@ async function handle(req: NextRequest) {
       write: !dryRun,
       includeSearchTerms,
     })
-    return NextResponse.json({ ...result, lookbackDays })
+    return NextResponse.json({ ...result, lookbackDays, catchUp })
   } catch (error) {
     if (error instanceof GoogleAdsReauthorizationRequiredError) {
       console.warn('[google-ads-reporting-sync] Google Ads reconnection required')
