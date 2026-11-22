@@ -72,6 +72,7 @@ const GROUPS: ContextGroup[] = [
       { label: 'Website conversion', href: '/marketing/website-conversion', icon: 'query_stats', matchPath: '/marketing/website-conversion' },
       { label: 'Call recordings', href: '/marketing/calls', icon: 'record_voice_over', matchPath: '/marketing/calls' },
       { label: 'Lead alerts', href: '/marketing/alerts', icon: 'notification_important', matchPath: '/marketing/alerts' },
+      { label: 'Direct mail', href: '/marketing/mail', icon: 'mail', matchPath: '/marketing/mail' },
       { label: 'Landing pages', href: '/marketing/heatmaps', icon: 'ads_click', matchPath: '/marketing/heatmaps' },
     ],
   },
