@@ -11,6 +11,7 @@ import {
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { DEAD_REASONS, cleanDeadReason } from '@/lib/lead-outcomes'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
+import { queuePpcDealConversion } from '@/lib/ppc/deal-conversion'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
 import {
@@ -195,6 +196,16 @@ export async function POST(
           assignedTo: result.owner ?? actor.name,
           source: 'crm_lifecycle_command_v1',
         }).catch((error) => console.error('[lifecycle] appointment conversion queue failed:', error))
+      }
+
+      if (stage === 'under_contract') {
+        await queuePpcDealConversion({
+          leadId: id,
+          eventName: 'contract_signed',
+          occurredAt: new Date().toISOString(),
+          source: 'crm_lifecycle_command_v1',
+          referenceId: idempotencyKey,
+        }).catch((error) => console.error('[lifecycle] contract conversion queue failed:', error))
       }
     }
 

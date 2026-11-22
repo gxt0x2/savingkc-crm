@@ -3,6 +3,8 @@ import type { PpcConversionEventName } from '@/lib/ppc/conversion-outbox'
 export const GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES: PpcConversionEventName[] = [
   'qualified_lead',
   'appointment_booked',
+  'contract_signed',
+  'deal_closed',
   'call_connected_60s',
   'call_connected_2m',
   'call_connected_5m',
@@ -11,6 +13,8 @@ export const GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES: PpcConversionEventName[] = [
 export const GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES: PpcConversionEventName[] = [
   'qualified_lead',
   'appointment_booked',
+  'contract_signed',
+  'deal_closed',
   'call_connected_60s',
   'call_connected_2m',
   'call_connected_5m',
@@ -45,4 +49,15 @@ export function nonExportablePpcEventReason(eventName: string | null | undefined
   }
 
   return `${eventName || 'conversion'} is a CRM diagnostic signal and is not eligible for Google Ads export`
+}
+
+/**
+ * Deal-stage conversions (G6). A missing Google Ads conversion action mapping
+ * fails these loudly instead of skipping them, so the daily tracking health
+ * check reports it while the clicks are still inside Google's 90-day window.
+ */
+export const GOOGLE_ADS_DEAL_PPC_EVENT_NAMES: PpcConversionEventName[] = ['contract_signed', 'deal_closed']
+
+export function isGoogleAdsDealPpcEvent(eventName: string | null | undefined): boolean {
+  return eventName === 'contract_signed' || eventName === 'deal_closed'
 }

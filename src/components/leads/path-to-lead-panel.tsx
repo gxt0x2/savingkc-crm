@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AttributionTouch, LeadAttribution } from '@/lib/attribution/lead-attribution'
-import type { JourneyStep } from '@/lib/ppc/lead-journey'
+import type { CrmStep } from '@/lib/ppc/lead-crm-timeline'
+import type { JourneyStep, JourneySummary } from '@/lib/ppc/lead-journey'
 
 function host(url?: string): string | undefined {
   if (!url) return undefined
@@ -43,6 +44,56 @@ const EVENT_LABELS: Record<string, string> = {
   form_started: 'Started the form',
   lead_submitted: 'Submitted',
   ppc_visit_started: 'Ad visit',
+  tool_used: 'Used a tool',
+  tool_engaged: 'Worked through a tool',
+  faq_opened: 'Opened an FAQ',
+  video_started: 'Played a video',
+}
+
+const CRM_LABELS: Record<string, string> = {
+  lead_created: 'Lead created',
+  call: 'Call',
+  sms: 'Text',
+  email: 'Email',
+  email_received: 'Email received',
+  note: 'Note',
+  status_change: 'Status change',
+  appointment_booked: 'Appointment booked',
+  appointment: 'Appointment',
+  appointment_outcome: 'Appointment outcome',
+  qualification: 'Qualification',
+  contract_signed: 'Contract signed',
+  closed_won: 'Deal closed',
+  fell_through: 'Deal fell through',
+}
+
+function summaryLine(s: JourneySummary): string | undefined {
+  if (!s.webEvents) return undefined
+  const visits = `${s.visits} visit${s.visits === 1 ? '' : 's'}`
+  const days = s.daysToLead === null ? null : s.daysToLead === 0 ? 'became a lead the same day' : `${s.daysToLead} day${s.daysToLead === 1 ? '' : 's'} from first visit to lead`
+  return [visits, days, s.adClick ? 'came through a Google Ads click' : null].filter(Boolean).join(' · ')
+}
+
+function CrmList({ steps }: { steps: CrmStep[] }) {
+  if (!steps.length) return null
+  return (
+    <div className="pt-2">
+      <dt className="mb-1 text-sm text-muted-foreground">Sales timeline ({steps.length})</dt>
+      <dd>
+        <ol className="space-y-0.5 text-sm">
+          {steps.map((step, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="w-40 shrink-0 text-muted-foreground">{when(step.at)}</span>
+              <span className="min-w-0 break-words">
+                {CRM_LABELS[step.event] ?? step.event.replace(/_/g, ' ')}
+                {step.detail ? <span className="text-muted-foreground"> · {step.detail}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </dd>
+    </div>
+  )
 }
 
 function sourceLabel(source: string | null): string | undefined {
@@ -89,6 +140,8 @@ function Row({ label, value }: { label: string; value?: string }) {
 export function PathToLeadPanel({ leadId }: { leadId: string }) {
   const [attr, setAttr] = useState<LeadAttribution | null | undefined>(undefined)
   const [journey, setJourney] = useState<JourneyStep[]>([])
+  const [summary, setSummary] = useState<JourneySummary | null>(null)
+  const [crm, setCrm] = useState<CrmStep[]>([])
 
   useEffect(() => {
     let alive = true
@@ -97,7 +150,12 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
     // Website + lander journey for this lead's session, any traffic source.
     fetch(`/api/leads/${leadId}/journey`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
-      .then((body: { journey?: JourneyStep[] } | null) => { if (alive && body?.journey) setJourney(body.journey) })
+      .then((body: { journey?: JourneyStep[]; summary?: JourneySummary; crm?: CrmStep[] } | null) => {
+        if (!alive || !body) return
+        if (body.journey) setJourney(body.journey)
+        if (body.summary) setSummary(body.summary)
+        if (body.crm) setCrm(body.crm)
+      })
       .catch(() => {})
     return () => { alive = false }
   }, [leadId])
@@ -107,9 +165,12 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
     <section className="rounded-lg border p-4" aria-label="Path to lead">
       <h3 className="mb-3 text-sm font-semibold">Path to lead</h3>
       {!attr ? (
-        journey.length ? <dl className="space-y-1.5"><JourneyList steps={journey} /></dl> : <p className="text-sm text-muted-foreground">No attribution recorded for this lead.</p>
+        journey.length || crm.length
+          ? <dl className="space-y-1.5"><Row label="Summary" value={summary ? summaryLine(summary) : undefined} /><JourneyList steps={journey} /><CrmList steps={crm} /></dl>
+          : <p className="text-sm text-muted-foreground">No attribution recorded for this lead.</p>
       ) : (
         <dl className="space-y-1.5">
+          <Row label="Summary" value={summary ? summaryLine(summary) : undefined} />
           <Row label="Lead source" value={attr.lead_source_type.replace(/_/g, ' ')} />
           <Row label="First visit" value={when(attr.first_visit_at)} />
           <Row label="First touch" value={attr.first_touch ? touchLine(attr.first_touch) : undefined} />
@@ -133,6 +194,7 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
             </div>
           ) : null}
           <JourneyList steps={journey} />
+          <CrmList steps={crm} />
           {attr.derived_from?.startsWith('backfill') ? (
             <p className="pt-2 text-xs text-muted-foreground">Backfilled from older records — partial.</p>
           ) : null}
