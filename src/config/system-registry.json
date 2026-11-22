@@ -293,7 +293,7 @@
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
       "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/leads/[id]/reenrich", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars", "lead_journey_timeline"],
       "environment": ["CRON_SECRET"],
       "crons": [
         {
@@ -528,8 +528,13 @@
       "owner": "Marketing",
       "status": "active",
       "routes": ["/marketing"],
+<<<<<<< HEAD
       "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export"],
-      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events", "lead_journey_timeline"],
+      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events"],
+=======
+      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export", "/api/cron/tracking-health"],
+      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events"],
+>>>>>>> origin/main
       "environment": ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN"],
       "crons": [
         {
@@ -545,6 +550,10 @@
         {
           "path": "/api/workers/ppc-conversion-export",
           "schedule": "*/15 * * * *"
+        },
+        {
+          "path": "/api/cron/tracking-health",
+          "schedule": "43 13 * * *"
         }
       ]
     },

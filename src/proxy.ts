@@ -109,6 +109,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/cron/sync-mojo-performance',
   '/api/cron/sync-mojo-calls',
   '/api/cron/tax-status-verification',
+  '/api/cron/tracking-health',
   '/api/deals/import-photos',
   '/api/deals/upload',
   // Enrichment is intentionally exact-listed so adding a new route under the
