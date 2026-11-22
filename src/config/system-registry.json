@@ -528,7 +528,7 @@
       "owner": "Marketing",
       "status": "active",
       "routes": ["/marketing"],
-      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export", "/api/admin/tracking-number-channels"],
+      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export", "/api/cron/tracking-health", "/api/admin/tracking-number-channels"],
       "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events", "tracking_number_channels"],
       "environment": ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN"],
       "crons": [
@@ -545,6 +545,10 @@
         {
           "path": "/api/workers/ppc-conversion-export",
           "schedule": "*/15 * * * *"
+        },
+        {
+          "path": "/api/cron/tracking-health",
+          "schedule": "43 13 * * *"
         }
       ]
     },
