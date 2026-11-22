@@ -62,6 +62,8 @@ const GA4_EVENT_ALLOW = [
   "page_view", "session_start", "first_visit",
   "generate_lead", "lead_submitted", "form_started", "form_step_completed",
   "phone_click", "appointment_booked", "cta_click", "quiz_started", "quiz_qualified", "contact_started",
+  // v6 (2026-11-21, tracking gap G4): widget and engagement events from skc-journey.js.
+  "tool_used", "tool_engaged", "faq_opened", "video_started",
 ];
 async function ga4Events(tok: string, since: string, until: string) {
   const pid = Deno.env.get("GA4_PROPERTY_ID"); if (!pid) throw new Error("GA4_PROPERTY_ID not set");
