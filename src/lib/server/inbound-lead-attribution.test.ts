@@ -128,4 +128,17 @@ describe('stampInboundLeadAttribution', () => {
     expect(findPhoneClicks).not.toHaveBeenCalled()
     expect(saved[0].attribution).toMatchObject({ derived_from: 'inbound:number_channel', first_touch: { source: 'direct_mail', medium: 'sms', campaign: 'Nov drop' } })
   })
+
+  it('credits a mail response number to its drop even when the caller is a prospect (G8)', async () => {
+    const { d, saved } = deps({ isProspectPhone: async () => true, loadNumberChannel: async () => ({ channel: 'direct_mail', campaign: 'jackson-tax-nov-1124' }) })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', callerNumber: '+19135551212', calledNumber: '+18166088770', callSid: SID }, d)
+    expect(saved[0].attribution).toMatchObject({ derived_from: 'inbound:number_channel', first_touch: { source: 'direct_mail', medium: 'phone', campaign: 'jackson-tax-nov-1124' } })
+  })
+
+  it('still lets the prospect match win on a public-number channel', async () => {
+    const { d, saved } = deps({ isProspectPhone: async () => true, loadNumberChannel: async () => ({ channel: 'public_number', campaign: 'website and brand' }) })
+    await stampInboundLeadAttribution({ leadId: 'L1', channel: 'call', callerNumber: '+19135551212', calledNumber: '+18164292900', callSid: SID }, d)
+    expect(saved[0].attribution.derived_from).toBe('inbound:prospect_phone_match')
+  })
 })
+
