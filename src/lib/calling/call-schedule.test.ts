@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { evaluateDialerCallPolicy } from '@/lib/dialer-call-policy'
-import { campaignEndOpen, phoneCallSchedule, recipientCallWindowOpen } from '@/lib/calling/call-schedule'
+import { campaignEndOpen, localTcpaWindowOpen, phoneCallSchedule, recipientCallWindowOpen } from '@/lib/calling/call-schedule'
 import { exportBlockReason } from '@/lib/dialer-suppression-policy'
 
 const centralMorning = new Date('2026-11-16T15:30:00.000Z')
@@ -21,6 +21,24 @@ describe('recipient call schedule', () => {
   it('fail-closes an unknown area code to 11:00 CT and does not use the property state', () => {
     expect(phoneCallSchedule('+19995550100')).toMatchObject({ callTz: 'unknown', earliestCallCt: '11:00' })
     expect(phoneCallSchedule('5550100')).toMatchObject({ callTz: 'unknown', earliestCallCt: '11:00' })
+  })
+
+  it('keeps an unknown area code inside every mapped zone', () => {
+    const unknown = phoneCallSchedule('+19995550100')
+    const noonCentral = new Date('2026-11-16T18:00:00.000Z')
+    const halfPastNineEastern = new Date('2026-11-17T02:30:00.000Z')
+    expect(localTcpaWindowOpen(unknown, noonCentral)).toBe(true)
+    expect(localTcpaWindowOpen(unknown, halfPastNineEastern)).toBe(false)
+    expect(evaluateDialerCallPolicy({ ...clean('+19995550100', noonCentral), surface: 'crm' }).allowed).toBe(true)
+    expect(evaluateDialerCallPolicy({
+      ...clean('+19995550100', halfPastNineEastern),
+      surface: 'crm',
+      callingHoursExempt: true,
+    })).toMatchObject({ allowed: false, reason: 'outside_calling_hours' })
+    expect(evaluateDialerCallPolicy({
+      ...clean('+18165550100', halfPastNineEastern),
+      surface: 'crm',
+    }).allowed).toBe(true)
   })
 
   it('places 614 and 716 in Eastern and the new Pacific overlays in Pacific', () => {

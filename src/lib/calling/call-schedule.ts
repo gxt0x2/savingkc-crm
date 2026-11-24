@@ -45,11 +45,22 @@ export function phoneCallSchedule(phone: string | null | undefined): CallSchedul
   return { callTz, earliestCallCt: EARLIEST_CALL_CT[callTz], iana }
 }
 
-/** TCPA floor and ceiling: 8:00am inclusive through 9:00pm exclusive, recipient local. */
+/**
+ * TCPA floor and ceiling: 8:00am inclusive through 9:00pm exclusive, recipient local.
+ * An unknown area code has to sit inside every mapped zone at once: 8:00am in the
+ * latest zone (Hawaii) and before 9:00pm Eastern.
+ */
 export function localTcpaWindowOpen(schedule: CallSchedule, now: Date): boolean {
   if (!Number.isFinite(now.getTime())) return false
+  if (schedule.callTz === 'unknown') return unknownZoneIntersectionOpen(now)
   const local = minutesInZone(now, schedule.iana)
   return local !== null && local >= 8 * 60 && local < 21 * 60
+}
+
+function unknownZoneIntersectionOpen(now: Date): boolean {
+  const morning = minutesInZone(now, ZONE.hawaii)
+  const evening = minutesInZone(now, ZONE.eastern)
+  return morning !== null && evening !== null && morning >= 8 * 60 && evening < 21 * 60
 }
 
 /** At or after earliest_call_ct and before 9:00pm in the recipient zone. */

@@ -1271,5 +1271,56 @@ if elapsed >= 4000:
 PY
 
 echo "PASS: calling-pool export at or under 7s"
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261222140001_remove_kansas_outreach_gates.sql" >/dev/null
+"${PSQL[@]}" <<'SQL'
+INSERT INTO public.source_list_rows (
+  id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones, match_key
+) VALUES (
+  '94000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000001',
+  'tax_delinquent',
+  'jackson',
+  'MO',
+  'P-NO-PROSPECT',
+  '1 Main',
+  'No Prospect',
+  NULL,
+  'ready',
+  ARRAY['+18165550888'],
+  'parcel:P-NO-PROSPECT'
+);
+DO $$
+DECLARE
+  reason text;
+BEGIN
+  SELECT found.block_reason INTO reason
+  FROM public.source_list_phone_block_reasons_v1(
+    ARRAY['+18165550888'],
+    ARRAY[NULL::uuid],
+    ARRAY['jackson'],
+    ARRAY['jackson']
+  ) AS found;
+  IF reason IS NOT NULL THEN
+    RAISE EXCEPTION 'null-prospect Jackson MO row was blocked as %', reason;
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550888', 'jackson', 'jackson') IS NOT NULL THEN
+    RAISE EXCEPTION 'status scrub blocked a null-prospect Jackson MO row: %',
+      public.source_list_phone_block_reason_v1('+18165550888', 'jackson', 'jackson');
+  END IF;
+  SELECT found.block_reason INTO reason
+  FROM public.source_list_phone_block_reasons_v1(
+    ARRAY['+18165550889'],
+    ARRAY[NULL::uuid],
+    ARRAY['jackson'],
+    ARRAY[NULL]
+  ) AS found;
+  IF reason IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'Jackson with no state returned %', coalesce(reason, '<null>');
+  END IF;
+END $$;
+SQL
+echo "PASS: null-prospect Missouri source-list row stays in area"
+
 bash "$ROOT/scripts/rehearse-market-check.sh"
 echo "PASS: #817 market-check rehearsal including B6 after #825"

@@ -167,25 +167,72 @@ $pair$;
 REVOKE ALL ON FUNCTION public.service_county_state_pair_v1(text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.service_county_state_pair_v1(text, text) TO service_role;
 
--- County name alone is not a service place. Johnson with no state is not Johnson KS.
-SELECT public.rewrite_live_function_v1(
-  'source_list_phone_block_reasons_v1',
-  $old$normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')$old$,
-  $new$normalized.slug NOT IN ('unknown', 'unresolved') AND NOT public.service_county_state_pair_v1(normalized.slug, (
-            SELECT upper(btrim(prospect.situs_state))
-            FROM public.prospects AS prospect
-            WHERE prospect.id = input.prospect_id
-          ))$new$
-);
+-- The row's own state wins. A missing prospect is not a missing state.
+-- Prospect situs is only the fallback. A service county with no state at
+-- either place stays unresolved instead of out of area.
+CREATE OR REPLACE FUNCTION public.service_place_state_v1(p_county text, p_prospect_id uuid, p_phone text)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $state$
+  SELECT coalesce(
+    (
+      SELECT upper(btrim(row.state))
+      FROM public.source_list_rows AS row
+      WHERE lower(btrim(coalesce(row.county, ''))) = lower(btrim(coalesce(p_county, '')))
+        AND nullif(btrim(row.state), '') IS NOT NULL
+        AND (
+          (p_prospect_id IS NOT NULL AND row.prospect_id = p_prospect_id)
+          OR EXISTS (
+            SELECT 1
+            FROM unnest(coalesce(row.phones, ARRAY[]::text[])) AS phone_value
+            WHERE length(right(regexp_replace(coalesce(p_phone, ''), '\D', '', 'g'), 10)) = 10
+              AND right(regexp_replace(coalesce(phone_value, ''), '\D', '', 'g'), 10)
+                = right(regexp_replace(coalesce(p_phone, ''), '\D', '', 'g'), 10)
+          )
+        )
+      ORDER BY (p_prospect_id IS NOT NULL AND row.prospect_id = p_prospect_id) DESC
+      LIMIT 1
+    ),
+    (
+      SELECT upper(btrim(prospect.situs_state))
+      FROM public.prospects AS prospect
+      WHERE prospect.id = p_prospect_id
+        AND nullif(btrim(prospect.situs_state), '') IS NOT NULL
+    )
+  );
+$state$;
 
+REVOKE ALL ON FUNCTION public.service_place_state_v1(text, uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.service_place_state_v1(text, uuid, text) TO service_role;
+
+-- Replace the allow-list before the rejection list. The rejection rewrite
+-- mentions that allow-list, and a later replace() would edit the guard.
 SELECT public.rewrite_live_function_v1(
   'source_list_phone_block_reasons_v1',
   $old$normalized.slug IN ('jackson', 'clay', 'platte', 'wyandotte', 'johnson')$old$,
-  $new$public.service_county_state_pair_v1(normalized.slug, (
-            SELECT upper(btrim(prospect.situs_state))
-            FROM public.prospects AS prospect
-            WHERE prospect.id = input.prospect_id
-          ))$new$
+  $new$public.service_county_state_pair_v1(
+            normalized.slug,
+            public.service_place_state_v1(normalized.slug, input.prospect_id, input.phone)
+          )$new$
+);
+
+-- County name alone is not a service place. Johnson with no state is not Johnson KS.
+-- A service county with no state stays unresolved. A different state, or a
+-- county outside the five, is out of the service area.
+SELECT public.rewrite_live_function_v1(
+  'source_list_phone_block_reasons_v1',
+  $old$normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')$old$,
+  $new$normalized.slug NOT IN ('unknown', 'unresolved')
+            AND NOT (
+              normalized.slug IN ('jackson', 'clay', 'platte', 'wyandotte', 'johnson')
+              AND public.service_place_state_v1(normalized.slug, input.prospect_id, input.phone) IS NULL
+            )
+            AND NOT public.service_county_state_pair_v1(
+              normalized.slug,
+              public.service_place_state_v1(normalized.slug, input.prospect_id, input.phone)
+            )$new$
 );
 
 CREATE OR REPLACE FUNCTION public.market_service_place_v1(p_zip text, p_parcel text)

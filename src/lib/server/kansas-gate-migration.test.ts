@@ -37,6 +37,13 @@ beforeAll(() => {
       situs_state text,
       parcel_id text
     );
+    CREATE TABLE public.source_list_rows (
+      id uuid PRIMARY KEY,
+      prospect_id uuid,
+      county text,
+      state text,
+      phones text[] NOT NULL DEFAULT '{}'
+    );
     CREATE TABLE public.target_zips (
       zip5 text PRIMARY KEY,
       county text,
@@ -93,6 +100,7 @@ beforeAll(() => {
       WITH input AS (
         SELECT
           item.ordinal,
+          item.phone,
           item.prospect_id,
           counties.county,
           counties.situs_county
@@ -253,7 +261,7 @@ describe('kansas gate migration against a schema snapshot', () => {
         ARRAY[NULL]
       );
     `).trim()
-    expect(unqualified).toBe('out_of_service_area')
+    expect(unqualified).toBe('county_unresolved')
     psql(`UPDATE public.prospects SET situs_state = 'KS' WHERE id = '${prospect}';`)
     const place = psql(`
       SELECT coalesce(county, '') || '|' || coalesce(state, '')
@@ -266,6 +274,33 @@ describe('kansas gate migration against a schema snapshot', () => {
       FROM public.market_service_place_v1(NULL, 'PARCEL-JOHNSON-MO');
     `).trim()
     expect(missingState).toBe('|')
+  })
+
+  it('lets a Missouri source-list row with no prospect pass', () => {
+    psql(`
+      INSERT INTO public.source_list_rows (id, prospect_id, county, state, phones)
+      VALUES
+        ('00000000-0000-4000-8000-000000000020', NULL, 'jackson', 'MO', ARRAY['+18165550199']),
+        ('00000000-0000-4000-8000-000000000021', NULL, 'clay', NULL, ARRAY['+18165550198']);
+    `)
+    const passed = psql(`
+      SELECT count(*) FROM public.source_list_phone_block_reasons_v1(
+        ARRAY['+18165550199'],
+        ARRAY[NULL::uuid],
+        ARRAY['jackson'],
+        ARRAY['jackson']
+      );
+    `).trim()
+    expect(passed).toBe('0')
+    const unresolved = psql(`
+      SELECT block_reason FROM public.source_list_phone_block_reasons_v1(
+        ARRAY['+18165550198'],
+        ARRAY[NULL::uuid],
+        ARRAY['clay'],
+        ARRAY[NULL]
+      );
+    `).trim()
+    expect(unresolved).toBe('county_unresolved')
   })
 
   it('does not change buyer contract templates', () => {
