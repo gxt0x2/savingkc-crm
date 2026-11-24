@@ -14,7 +14,7 @@ and not a daily upload. Newest `created_at` stayed on that backfill.
 | Provider | `county_public` (default). No owner upload. |
 | Shared import | `importForeclosureCsv` |
 | Watermarks | Seeds and advances `mortgage_foreclosure_ingest_controls` for jackson/johnson × notice types after `imported > 0` |
-| Stale alert | Resend email to `ernest@savingkc.com` when the later of `max(created_at)` and `max(updated_at)` is ≥ 24h on a Chicago weekday |
+| Stale alert | Resend email listing each unpaused county whose own activity is ≥ 24h, or whose sales feed errored, 404'd, or returned 0 sales, on a Chicago weekday. Paused counties are skipped. |
 | Owner flag | `GET /api/prospecting/foreclosure/ingest` includes `freshness` |
 
 `updated_at` counts as a landing because the cron upserts rows that already exist. A quiet upsert still means the job wrote.
@@ -75,14 +75,19 @@ Table `mortgage_foreclosure_ingest_controls`, key `(county, notice_type)`.
 
 ## Stale alert
 
-- Threshold: later of newest `created_at` and newest `updated_at` ≥ 24 hours
-- Chicago weekdays only
-- Empty table is stale on weekdays
-- Missing Resend config logs a warning and does not send SMS
+The cron response still includes whole-table `freshness` (later of newest `created_at` and newest `updated_at` across every prospect). The email does not use that whole-table flag.
+
+`staleAlert` keeps `warranted`, `sent`, `skippedReason`, and `to`, and adds `counties[]` for each unpaused county.
+
+- A county is included only when `mortgage_foreclosure_ingest_controls` has an unpaused row for it. Paused rows, including the all-paused default for a missing control, do not alert.
+- Activity for that county and state is the later of its newest prospect `created_at` and `updated_at`. The control `updated_since` watermark counts only when that county has no prospect timestamps. A Jackson import advances every unpaused watermark, so the watermark must not mark Johnson fresh.
+- On a Chicago weekday the county is stale when that activity is missing or ≥ 24 hours, or when this run's county_public pull recorded a dark signal: a fetch error, HTTP 404, or 0 sales. Johnson sales are JoCo `GetAllSales`. Jackson sales are the SouthLaw Missouri report. A 404 stays the last error; "0 sales" is used when the feed returned successfully but empty.
+- One email lists every stale county with its age and last error. The min-interval throttle is overall, not per county (`FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS`, default 20, in-process).
+- Weekends do not send. Missing `RESEND_API_KEY` or `RESEND_FROM_EMAIL` returns `skippedReason: resend_not_configured` and still reports `counties[]`. No SMS.
 
 ## Manual check
 
 ```bash
 curl -sS -H "Authorization: Bearer $CRON_SECRET" \
-  https://crm.savingkc.com/api/cron/foreclosure-ingest | jq '{ok,provider:.provider.status,import:.import,freshness:.freshness,notes:.notes}'
+  https://crm.savingkc.com/api/cron/foreclosure-ingest | jq '{ok,provider:.provider.status,import:.import,freshness:.freshness.stale,stale:.staleAlert,notes:.notes}'
 ```
