@@ -64,6 +64,23 @@ describe('dialer post-call review persistence', () => {
     }))
   })
 
+  it('does not require a lead when the recording belongs to a prospect', async () => {
+    const builder = chain({ data: { id: 'attempt-row-1' }, error: null })
+    mocks.from.mockReturnValue(builder)
+
+    const updated = await markDialerPostCallProcessing({
+      clientAttemptId: 'client-attempt-1',
+      leadId: null,
+      providerCallSid: 'CA123',
+      recordingSid: 'RE123',
+    })
+
+    expect(updated).toBe(true)
+    expect(builder.eq).toHaveBeenCalledWith('client_attempt_id', 'client-attempt-1')
+    expect(builder.eq).not.toHaveBeenCalledWith('lead_id', null)
+    expect(builder.eq).not.toHaveBeenCalledWith('lead_id', expect.anything())
+  })
+
   it('persists a bounded ready snapshot rather than the transcript', async () => {
     const builder = chain({ data: { id: 'attempt-row-1' }, error: null })
     mocks.from.mockReturnValue(builder)

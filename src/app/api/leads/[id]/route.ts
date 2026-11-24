@@ -5,6 +5,7 @@ import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { buildLeadProfilePatch } from '@/lib/server/lead-profile-command'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -235,6 +236,7 @@ export async function PATCH(
   if (!command.ok) {
     return NextResponse.json({ success: false, error: command.error }, { status: 400 })
   }
+  await recordWrittenEmails([command.patch.email])
 
   const { data, error } = await supabaseAdmin().rpc('crm_update_lead_profile_v1', {
     target_lead_id: id,

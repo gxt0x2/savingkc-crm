@@ -10,7 +10,9 @@ const callback = readFileSync(
 describe('recording callback AI governance boundary', () => {
   it('stages model-derived lead fields and automatically stores only factual call evidence', () => {
     expect(callback).toContain('createCallAnalysisLeadProposal')
-    expect(callback).toContain("transcript,\n      call_duration_seconds: duration")
+    expect(callback).toContain("transcript,\n    call_duration_seconds: duration")
+    expect(callback).not.toMatch(/call_duration_seconds: duration,\s*updated_at/)
+    expect(callback).not.toContain('updated_at: new Date()')
     expect(callback).not.toMatch(/leadUpdates\.motivation_score/)
     expect(callback).not.toMatch(/leadUpdates\.classification/)
     expect(callback).not.toContain('upsertAppointmentFromCall')

@@ -1,4 +1,5 @@
 export type LeadAlertDelivery = {
+  channel: string | null
   target: string | null
   to: string | null
   success: boolean
@@ -155,6 +156,7 @@ export function normalizeLeadAlertDelivery(metadata: unknown): LeadAlertDelivery
     const targetByPhone = byPhone(rawTo, phones)
     const phoneIndex = targetByPhone ? phones.indexOf(targetByPhone) : -1
     return {
+      channel: text(entry.channel).toLowerCase() || null,
       target: text(entry.target) || text(nested.target) || recipients[phoneIndex >= 0 ? phoneIndex : index] || null,
       to: rawTo,
       success,
@@ -226,10 +228,31 @@ export function resolveLeadAlertCallback(
   return { claimedBy, claimedAt, outcome, outcomeAt, dialStatus }
 }
 
+function countsAsSmsDelivery(delivery: LeadAlertDelivery): boolean {
+  const channel = (delivery.channel || 'sms').toLowerCase()
+  if (channel !== 'sms') return false
+  return (delivery.status || '').toLowerCase() !== 'skipped'
+}
+
+export function leadAlertDeliveryPhrase(delivery: Pick<LeadAlertDelivery, 'channel' | 'success' | 'error' | 'status'>): string {
+  const channel = (delivery.channel || 'sms').toLowerCase()
+  const label = channel === 'email'
+    ? 'Email'
+    : channel === 'mobile_push'
+      ? 'App push'
+      : channel === 'web_push'
+        ? 'Browser push'
+        : 'SMS'
+  if ((delivery.status || '').toLowerCase() === 'skipped') return `${label} skipped`
+  if (delivery.success) return `${label} ok`
+  return delivery.error || delivery.status || `${label} failed`
+}
+
 export function buildLeadAlertSummary(items: LeadAlertSummaryInput[]): LeadAlertSummary {
   return items.reduce<LeadAlertSummary>((summary, item) => {
-    const deliverySuccess = item.delivery.filter((delivery) => delivery.success).length
-    const deliveryFailed = item.delivery.filter((delivery) => !delivery.success).length
+    const smsDelivery = item.delivery.filter(countsAsSmsDelivery)
+    const deliverySuccess = smsDelivery.filter((delivery) => delivery.success).length
+    const deliveryFailed = smsDelivery.filter((delivery) => !delivery.success).length
     const channel = alertChannel(item.trigger)
     summary.total += 1
     summary.smsSucceeded += deliverySuccess

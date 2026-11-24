@@ -6,8 +6,11 @@ import { readGmailConnectionHealth } from '@/lib/gmail-oauth-health'
 import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import type { GmailHealthSnapshot } from '@/lib/gmail-oauth-status'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { readMojoCallIngestHealth } from '@/lib/server/mojo-dial-health'
+import { listOverdueScheduledAppointments } from '@/lib/server/overdue-appointment-outcomes'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
+import { unprovenSearch2026CampaignNote } from '@/lib/ppc/tracking-events'
 
 type Db = ReturnType<typeof supabaseAdmin>
 type JsonRecord = Record<string, unknown>
@@ -258,13 +261,19 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
 
   const activityBase = db.from('lead_activities').select('id, lead_id, activity_type, description, agent, metadata, created_at').in('activity_type', TASK_ACTIVITY_TYPES).order('created_at', { ascending: false }).limit(1000)
   const leadBase = db.from('leads').select('id, full_name, property_address, city, state, station, priority, assigned_agent, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit)
-  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult] = await Promise.all([
+  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult, overdueAppointments, mojoCallIngest] = await Promise.all([
     activityBase,
     db.from('appointments').select('id, lead_id, scheduled_at, type, status, assigned_to, address, notes').in('status', ['scheduled', 'confirmed']).gte('scheduled_at', generatedAt).lte('scheduled_at', nextWeek).order('scheduled_at', { ascending: true }).limit(limit),
     actorLeadQuery(leadBase, actor),
     db.from('tc_tasks').select('id, tc_file_id, task_type, label, status, due_at, assigned_to, notes, created_at').in('status', ['open', 'blocked']).order('due_at', { ascending: true, nullsFirst: false }).limit(100),
     db.from('tc_files').select('id, lead_id, file_number, status, risk_level, next_action, closing_scheduled_at, emd_due_at').neq('status', 'cancelled').limit(300),
     db.from('dispo_deals').select('id, lead_id, stage, closeout_status, close_date, debrief_due_at, assignment_fee, updated_at').neq('stage', 'dead').order('updated_at', { ascending: false }).limit(300),
+    listOverdueScheduledAppointments(db, { now, limit }).catch((error: unknown) => ({
+      rows: [],
+      error: error instanceof Error ? error.message : 'Overdue appointments could not be read',
+      cutoff: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+    })),
+    readMojoCallIngestHealth(db, now),
   ])
 
   if (activitiesResult.error || staleLeadsResult.error) throw new Error(`CRM attention lookup failed: ${(activitiesResult.error || staleLeadsResult.error)?.message}`)
@@ -290,6 +299,7 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
   const ids = [
     ...tasks.map((task) => String(task.lead_id || '')),
     ...appointments.map((appointment) => String(appointment.lead_id || '')),
+    ...overdueAppointments.rows.map((appointment) => String(appointment.leadId || '')),
     ...tcTasks.map((task) => String(tcFileMap.get(String(task.tc_file_id))?.lead_id || '')),
     ...deals.map((deal) => String(deal.lead_id || '')),
   ]
@@ -315,16 +325,22 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
     generatedAt,
     tasks: tasks.map((task) => ({ ...task, dueAt: activityDueAt(task), status: activityStatus(task), metadata: sanitizeAssistantMetadata(task.metadata), lead: attachLead(task.lead_id), crmUrl: task.lead_id ? crmLeadUrl(String(task.lead_id)) : null })),
     appointments: visibleAppointments.map((appointment) => ({ ...appointment, lead: attachLead(appointment.lead_id), crmUrl: appointment.lead_id ? crmLeadUrl(String(appointment.lead_id)) : null })),
+    overdueAppointmentOutcomes: overdueAppointments.rows
+      .filter((appointment) => actorCanReadCompanyWide || leadIsVisible(appointment.leadId))
+      .map((appointment) => ({ ...appointment, lead: attachLead(appointment.leadId), crmUrl: appointment.leadId ? crmLeadUrl(appointment.leadId) : null })),
     staleLeads: ((staleLeadsResult.data || []) as JsonRecord[]).map(mapLeadLink),
     transactionCoordination: tcTasks.map((task) => {
       const file = tcFileMap.get(String(task.tc_file_id))
       return { ...task, file, lead: attachLead(file?.lead_id), crmUrl: file?.lead_id ? crmLeadUrl(String(file.lead_id)) : `${CRM_ORIGIN}/tc` }
     }),
     dispositionDeadlines: visibleDeals.filter((deal) => deal.close_date || deal.debrief_due_at || deal.closeout_status === 'awaiting_debrief').slice(0, limit).map((deal) => ({ ...deal, lead: attachLead(deal.lead_id), crmUrl: deal.lead_id ? crmLeadUrl(String(deal.lead_id)) : `${CRM_ORIGIN}/dispo` })),
+    mojoCallIngest,
     availability: {
       appointments: appointmentsResult.error ? appointmentsResult.error.message : 'available',
+      overdueAppointmentOutcomes: overdueAppointments.error ?? 'available',
       tcTasks: tcTasksResult.error || tcFilesResult.error ? (tcTasksResult.error || tcFilesResult.error)?.message : 'available',
       dispositions: dealsResult.error ? dealsResult.error.message : 'available',
+      mojoCallIngest: mojoCallIngest.status === 'unknown' ? mojoCallIngest.message : 'available',
     },
     sources: [
       source('SavingKC canonical activity tasks', `${CRM_ORIGIN}/calendar`, generatedAt, 'lead_activities task, follow-up, callback and offer actions'),
@@ -377,7 +393,7 @@ export async function readAssistantWebsiteFunnel(db: Db, days: number) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult] = await Promise.all([
     db.from('leads').select('id, full_name, source, form_status, station, classification, created_at, updated_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
-    db.from('ppc_tracking_events').select('id, event_name, event_category, event_time, lead_id, page_path, traffic_source, campaign, utm_source, utm_medium, utm_campaign, form_step, form_status, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
+    db.from('ppc_tracking_events').select('id, event_name, event_category, event_time, lead_id, page_path, traffic_source, campaign, utm_source, utm_medium, utm_campaign, gclid, gbraid, wbraid, form_step, form_status, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
   ])
   if (leadsResult.error) throw new Error(`Website lead funnel unavailable: ${leadsResult.error.message}`)
   const leads = (leadsResult.data || []) as JsonRecord[]
@@ -386,7 +402,7 @@ export async function readAssistantWebsiteFunnel(db: Db, days: number) {
   return {
     action: 'website_funnel', generatedAt, periodDays: days,
     leads: { total: leads.length, bySource: countBy(leads, 'source'), byFormStatus: countBy(leads, 'form_status'), byClassification: countBy(leads, 'classification'), recent },
-    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCategory: countBy(events, 'event_category'), byPage: countBy(events, 'page_path'), byCampaign: countBy(events, 'campaign'), recent: events.slice(0, 20) },
+    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCategory: countBy(events, 'event_category'), byPage: countBy(events, 'page_path'), byCampaign: countBy(events, 'campaign'), campaignStorage: unprovenSearch2026CampaignNote(events), recent: events.slice(0, 20) },
     availability: { firstPartyEvents: eventsResult.error ? eventsResult.error.message : 'available', ga4: 'not connected', searchConsole: 'not connected' },
     sources: [
       source('SavingKC website leads stored in CRM', `${CRM_ORIGIN}/contacts`, generatedAt),
@@ -400,7 +416,7 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult, outboxResult] = await Promise.all([
     db.from('leads').select('id, source, station, classification, opportunity_score, created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
-    db.from('ppc_tracking_events').select('event_name, event_category, event_time, traffic_source, campaign, lead_id, gclid, gbraid, wbraid, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
+    db.from('ppc_tracking_events').select('event_name, event_category, event_time, traffic_source, campaign, utm_campaign, utm_medium, lead_id, gclid, gbraid, wbraid, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
     db.from('ppc_conversion_outbox').select('id, event_name, event_category, status, optimization_role, lead_id, conversion_value, event_time, click_id_type, attempts, last_error, approved_for_google_ads, sent_at, created_at, updated_at').gte('event_time', since).order('event_time', { ascending: false }).limit(2000),
   ])
   if (leadsResult.error) throw new Error(`Marketing lead summary unavailable: ${leadsResult.error.message}`)
@@ -411,7 +427,7 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
   return {
     action: 'marketing_summary', generatedAt, periodDays: days,
     leads: { total: leads.length, bySource: countBy(leads, 'source'), byStage: countBy(leads, 'station'), byClassification: countBy(leads, 'classification') },
-    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCampaign: countBy(events, 'campaign'), attributedLeadEvents: events.filter((row) => row.lead_id).length, clickIdEvents: events.filter((row) => row.gclid || row.gbraid || row.wbraid).length },
+    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCampaign: countBy(events, 'campaign'), campaignStorage: unprovenSearch2026CampaignNote(events), attributedLeadEvents: events.filter((row) => row.lead_id).length, clickIdEvents: events.filter((row) => row.gclid || row.gbraid || row.wbraid).length },
     conversionOutbox: { total: outbox.length, byStatus: countBy(outbox, 'status'), byEvent: countBy(outbox, 'event_name'), byOptimizationRole: countBy(outbox, 'optimization_role'), pending: pending.slice(0, 25) },
     availability: { firstPartyEvents: eventsResult.error ? eventsResult.error.message : 'available', conversionOutbox: outboxResult.error ? outboxResult.error.message : 'available', googleAdsLiveAccount: 'not queried by this read endpoint' },
     sources: [

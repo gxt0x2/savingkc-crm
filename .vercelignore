@@ -1,5 +1,7 @@
 .claude
 *.csv
+!data/mls-seeds/target_zips.csv
+!data/mls-seeds/min_list_price_by_zip.csv
 *.xlsx
 logs/
 test-results/

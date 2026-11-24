@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
   sendPushToAgentNames: vi.fn(),
+  sendMobilePushToAgentNames: vi.fn(),
   lookupProspectByPhone: vi.fn(),
   createEnrichedLeadFromProspect: vi.fn(),
   formatProspectAlert: vi.fn(),
@@ -24,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   resolveGoogleAdsLeadContext: vi.fn(),
   processInboundSmsConsent: vi.fn(),
   recordAppointmentSmsResponse: vi.fn(),
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -61,6 +65,10 @@ vi.mock('@/lib/push-notifications', () => ({
   sendPushToAgentNames: mocks.sendPushToAgentNames,
 }))
 
+vi.mock('@/lib/mobile-push', () => ({
+  sendMobilePushToAgentNames: mocks.sendMobilePushToAgentNames,
+}))
+
 vi.mock('@/lib/prospect-lookup', () => ({
   lookupProspectByPhone: mocks.lookupProspectByPhone,
 }))
@@ -88,6 +96,10 @@ vi.mock('@/lib/google-ads-phone', () => ({
 
 vi.mock('@/lib/server/appointment-sms-response', () => ({
   recordAppointmentSmsResponse: mocks.recordAppointmentSmsResponse,
+}))
+
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => mocks.afterRequest(work),
 }))
 
 import { POST } from './route'
@@ -255,6 +267,7 @@ describe('twilio SMS webhook seller responses', () => {
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
     mocks.sendPushToAgentNames.mockResolvedValue(1)
+    mocks.sendMobilePushToAgentNames.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])
     mocks.createEnrichedLeadFromProspect.mockResolvedValue('lead-created')
     mocks.formatProspectAlert.mockReturnValue('prospect context')
@@ -266,6 +279,9 @@ describe('twilio SMS webhook seller responses', () => {
         ? { handled: true, appointmentId: 'appointment-1', response: 'confirm' }
         : { handled: false }
     ))
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
     mocks.rpc.mockImplementation(async () => {
       if (phoneLookupError) return { data: null, error: phoneLookupError }
@@ -285,8 +301,8 @@ describe('twilio SMS webhook seller responses', () => {
     const response = await POST(makeSmsRequest('YES'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
-    expect(mocks.safeSendSMS).toHaveBeenCalledTimes(2)
-    expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: PROSPECT_PHONE }))
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'yes_reply_alert')).toBe(false)
     expect(inserts.some(({ table, payload }) => (
       table === 'lead_activities' &&
       typeof payload === 'object' &&
@@ -299,13 +315,21 @@ describe('twilio SMS webhook seller responses', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-03T13:00:00.000Z')) // 8:00 AM Central
 
-    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+    const response = await POST(makeSmsRequest('I want to sell', PROSPECT_PHONE, '+18167277667'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).toHaveBeenCalledTimes(1)
     expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({ to: '+18167564943' }))
     expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: '+18162262552' }))
     expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith(['Casey'], expect.any(Object))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Casey'], expect.objectContaining({
+      data: expect.objectContaining({
+        kind: 'inbound_sms',
+        href: '/conversation/lead-123',
+        leadId: 'lead-123',
+        eventId: 'sms_SM-I want to sell',
+      }),
+    }))
     vi.useRealTimers()
   })
 
@@ -313,12 +337,35 @@ describe('twilio SMS webhook seller responses', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-03T22:00:00.000Z')) // 5:00 PM Central
 
-    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+    const response = await POST(makeSmsRequest('I want to sell', PROSPECT_PHONE, '+18167277667'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith([], expect.any(Object))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith([], expect.objectContaining({
+      data: expect.objectContaining({ kind: 'inbound_sms', eventId: 'sms_SM-I want to sell' }),
+    }))
     vi.useRealTimers()
+  })
+
+  it('sends Expo push to Ernest and Casey for a known contact with selling intent while keeping Web Push', async () => {
+    const response = await POST(makeSmsRequest('I am interested in selling', '+19137179716', '+18166088588'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Lead Texted',
+      url: '/conversations?lead=lead-123',
+    }))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], {
+      title: 'Lead Texted',
+      body: 'Jessica Watkins: "I am interested in selling"',
+      data: {
+        href: '/conversation/lead-123',
+        kind: 'inbound_sms',
+        leadId: 'lead-123',
+        eventId: 'sms_SM-I am interested in selling',
+      },
+    })
   })
 
   it('does not send a canned TwiML reply back to a prospect who texts CONFIRM', async () => {
@@ -376,7 +423,7 @@ describe('twilio SMS webhook seller responses', () => {
     } }
     const response = await POST(makeSmsRequest('Please call me'))
     expect(response.status).toBe(200)
-    expect(mocks.safeSendSMS).toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(updates).toContainEqual(expect.objectContaining({
       table: 'lead_activities',
       payload: expect.objectContaining({ metadata: expect.objectContaining({ inbound_processing_state: 'completed' }) }),
@@ -385,7 +432,7 @@ describe('twilio SMS webhook seller responses', () => {
 
   it('returns retryable after inbound persistence when downstream processing is interrupted, then resumes the same SID', async () => {
     mocks.safeSendSMS.mockRejectedValueOnce(new Error('alert transport interrupted'))
-    const first = await POST(makeSmsRequest('Please call me'))
+    const first = await POST(makeSmsRequest('I am interested in selling'))
     expect(first.status).toBe(503)
     expect(existingSmsRow?.metadata?.inbound_processing_state).toBe('processing')
     expect(updates.some(({ payload }) => (
@@ -393,7 +440,7 @@ describe('twilio SMS webhook seller responses', () => {
     ))).toBe(false)
 
     vi.setSystemTime(new Date('2026-06-03T15:01:01.000Z'))
-    const retry = await POST(makeSmsRequest('Please call me'))
+    const retry = await POST(makeSmsRequest('I am interested in selling'))
     expect(retry.status).toBe(200)
     expect(updates.some(({ payload }) => (
       (payload as { metadata?: { inbound_processing_state?: string } }).metadata?.inbound_processing_state === 'completed'
@@ -632,19 +679,33 @@ describe('twilio SMS webhook seller responses', () => {
     expect(mocks.processInboundSmsConsent).toHaveBeenCalledOnce()
   })
 
-  it('marks every team-originated activity as internal conversation traffic', async () => {
+  it('keeps team coordination internal and the primary text off the seller lead', async () => {
     const response = await POST(makeSmsRequest('Internal coordination', '+18167564943'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
-    const teamSmsRows = inserts.filter(({ table, payload }) => (
+    const smsRows = inserts.filter(({ table, payload }) => (
       table === 'lead_activities' &&
-      typeof payload === 'object' &&
-      payload !== null &&
+      typeof payload === 'object' && payload !== null &&
       (payload as { activity_type?: string }).activity_type === 'sms'
     ))
-    expect(teamSmsRows.length).toBeGreaterThan(0)
-    for (const row of teamSmsRows) {
-      expect(row.payload).toMatchObject({ metadata: { is_team: true } })
-    }
+    const primary = smsRows.find((row) => (row.payload as { metadata?: { inbound_webhook_source?: string } }).metadata?.inbound_webhook_source)
+    expect(primary?.payload).toMatchObject({ lead_id: null, metadata: { team_sender: true, direction: 'received' } })
+    expect((primary?.payload as { metadata?: { is_team?: boolean } }).metadata?.is_team).toBeUndefined()
+    expect(smsRows.some((row) => (row.payload as { lead_id?: string | null; metadata?: { is_team?: boolean } }).metadata?.is_team === true && (row.payload as { lead_id?: string | null }).lead_id == null)).toBe(true)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+  })
+  it('logs a bulk survey blast as not_a_lead with no lead, alert, reply or opt-out', async () => {
+    reviewUnknown = true
+    const alerted = () => inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'unknown_sms_alert')
+    const blast = 'Missouri REALTORS: Your opinion matters! Share your views and help us to better represent you by taking a short survey and enter to win 1 of 5 $100 Visa gift cards. Responses are confidential: https://www.opinion-counts.com/jfe/form/SV_3e1sDtfYApdGRXE \r\nText STOP to quit'
+    await expect((await POST(makeSmsRequest(blast, '+16176908812'))).text()).resolves.toBe(EMPTY_TWIML)
+    expect([inserts.filter((row) => row.table === 'leads' || row.table === 'sms_opt_outs').length, alerted()]).toEqual([0, false])
+    expect([mocks.safeSendSMS, mocks.handleOptOut].map((fn) => fn.mock.calls.length)).toEqual([0, 0])
+    expect(existingSmsRow?.metadata).toMatchObject({ not_a_lead: true, junk_reason: 'bulk_survey', inbound_processing_state: 'completed' })
+  })
+  it('still creates a lead and alert for a real seller text without a bulk footer', async () => {
+    reviewUnknown = true
+    await POST(makeSmsRequest('Hi got your letter about my house, what would you offer?', '+16176908812'))
+    expect([inserts.filter((row) => row.table === 'leads').length, inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'unknown_sms_alert')]).toEqual([1, true])
   })
 })

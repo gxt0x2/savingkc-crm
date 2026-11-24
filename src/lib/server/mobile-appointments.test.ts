@@ -1,20 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  lifecycle: vi.fn(),
-  conversion: vi.fn(),
-  calendar: vi.fn(),
-  from: vi.fn(),
-}))
+const mocks = vi.hoisted(() => {
+  class AppointmentOutcomeError extends Error {
+    status: number
+    code: string
+    constructor(message: string, status: number, code: string) {
+      super(message)
+      this.name = 'AppointmentOutcomeError'
+      this.status = status
+      this.code = code
+    }
+  }
+  return {
+    rpc: vi.fn(),
+    lifecycle: vi.fn(),
+    conversion: vi.fn(),
+    calendar: vi.fn(),
+    from: vi.fn(),
+    outcome: vi.fn(),
+    AppointmentOutcomeError,
+  }
+})
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: () => ({ rpc: mocks.rpc, from: mocks.from }),
 }))
-vi.mock('@/lib/server/mobile-appointment-calendar', () => ({ syncMobileAppointmentCalendar: mocks.calendar }))
+vi.mock('@/lib/server/mobile-appointment-calendar', () => ({
+  syncMobileAppointmentCalendar: mocks.calendar,
+}))
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.lifecycle }))
 vi.mock('@/lib/ppc/appointment-booked-conversion', () => ({
   queuePpcAppointmentBookedConversion: mocks.conversion,
+}))
+vi.mock('@/lib/server/appointment-outcome', () => ({
+  recordAppointmentOutcome: mocks.outcome,
+  AppointmentOutcomeError: mocks.AppointmentOutcomeError,
 }))
 
 import { executeMobileAppointmentCommand, mapMobileAppointment } from './mobile-appointments'
@@ -68,10 +88,14 @@ describe('mobile appointment side-effect idempotency', () => {
     mocks.lifecycle.mockResolvedValue({ advanced: true })
     mocks.conversion.mockResolvedValue({ queued: true, reason: 'queued' })
     mocks.calendar.mockResolvedValue({ status: 'synced' })
-    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({ single: async () => ({ data: {
-      ...appointment, provider_event_id: `skc${appointment.id.replaceAll('-', '')}`,
+    const synced = {
+      ...appointment,
+      provider_event_id: `skc${appointment.id.replaceAll('-', '')}`,
       provider_sync_status: 'synced',
-    }, error: null }) }) }) })
+    }
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({
+      single: async () => ({ data: synced, error: null }),
+    }) }) })
   })
 
   it('does not repeat lifecycle or attribution work for an exact command replay', async () => {
@@ -120,32 +144,98 @@ describe('mobile appointment side-effect idempotency', () => {
 
   it('keeps CRM cancellation successful when a legacy appointment has no calendar owner', async () => {
     const cancelled = { ...appointment, status: 'cancelled', version: 2, provider_sync_status: 'not_configured' }
-    mocks.rpc.mockResolvedValue({
-      data: { created: false, changed: true, replayed: false, appointment: cancelled, activityId: 'activity-cancelled' },
-      error: null,
+    mocks.outcome.mockResolvedValue({
+      success: true, replayed: false, outcome: 'cancelled', appointment: cancelled,
+      stage: { changed: true, from: 'appointment_set', to: 'qualified', exception: true },
     })
     mocks.calendar.mockResolvedValue({ status: 'not_configured', warning: 'This appointment has no connected calendar owner.' })
-    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({ single: async () => ({ data: cancelled, error: null }) }) }) })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({
+      single: async () => ({ data: cancelled, error: null }),
+    }) }) })
     const result = await executeMobileAppointmentCommand({
       ...command, command: 'outcome', appointmentId: appointment.id, expectedVersion: 1,
       payload: { outcome: 'cancelled', notes: appointment.notes },
     })
     expect(result).toMatchObject({
       success: true, changed: true, appointment: { status: 'cancelled', version: 2 },
-      sideEffects: { provider: 'not_configured', lifecycle: 'not_applicable', conversion: 'not_applicable' },
+      sideEffects: { provider: 'not_configured', lifecycle: 'advanced', conversion: 'not_applicable' },
     })
     expect(result.warning).toContain('no connected calendar owner')
+    expect(mocks.outcome).toHaveBeenCalledOnce()
+    expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.lifecycle).not.toHaveBeenCalled()
     expect(mocks.conversion).not.toHaveBeenCalled()
   })
 
   it('reports a repeated terminal outcome as a status conflict without repeating calendar writes', async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'appointment_invalid_outcome' } })
+    mocks.outcome.mockRejectedValue(new mocks.AppointmentOutcomeError(
+      'This appointment outcome could not be applied. Refresh the calendar to check its current status.',
+      409,
+      'conflict',
+    ))
     await expect(executeMobileAppointmentCommand({
       ...command, command: 'outcome', appointmentId: appointment.id, expectedVersion: 2,
       payload: { outcome: 'cancelled', notes: appointment.notes },
     })).rejects.toMatchObject({ code: 'conflict', message: expect.stringContaining('Refresh the calendar') })
     expect(mocks.calendar).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('saves the CRM appointment when Google Calendar is not connected', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { created: true, changed: true, replayed: false, appointment, activityId: 'activity-1' },
+      error: null,
+    })
+    mocks.calendar.mockResolvedValue({
+      status: 'not_configured',
+      reason: 'no_token',
+      warning: 'Google Calendar is not connected for the original appointment owner.',
+    })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({
+      single: async () => ({ data: { ...appointment, provider_sync_status: 'not_configured' }, error: null }),
+    }) }) })
+
+    const result = await executeMobileAppointmentCommand(command)
+
+    expect(result).toMatchObject({
+      success: true,
+      created: true,
+      appointment: { id: appointment.id, sync: { provider: 'not_configured' } },
+      sideEffects: { provider: 'not_configured' },
+    })
+    expect(result.warning).toContain('not connected')
+    expect(mocks.rpc).toHaveBeenCalledOnce()
+    expect(mocks.calendar).toHaveBeenCalledOnce()
+  })
+
+  it('cancels in CRM when Google already has the event but calendar sync is not configured', async () => {
+    const cancelled = { ...appointment, status: 'cancelled', version: 2, provider_sync_status: 'not_configured' }
+    mocks.outcome.mockResolvedValue({
+      success: true, replayed: false, outcome: 'cancelled', appointment: cancelled,
+      stage: { changed: true, from: 'appointment_set', to: 'qualified', exception: true },
+    })
+    mocks.calendar.mockResolvedValue({
+      status: 'not_configured',
+      reason: 'no_token',
+      warning: 'Google Calendar is not connected for the original appointment owner.',
+    })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({
+      single: async () => ({ data: cancelled, error: null }),
+    }) }) })
+
+    const result = await executeMobileAppointmentCommand({
+      ...command, command: 'outcome', appointmentId: appointment.id, expectedVersion: 1,
+      payload: { outcome: 'cancelled', notes: appointment.notes },
+    })
+
+    expect(result).toMatchObject({
+      success: true,
+      changed: true,
+      appointment: { status: 'cancelled', version: 2, sync: { provider: 'not_configured' } },
+    })
+    expect(result.warning).toContain('not connected')
+    expect(mocks.outcome).toHaveBeenCalledOnce()
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 })
 
@@ -154,4 +244,33 @@ it('maps the durable calendar owner from the one-to-one ledger without inventing
     ...appointment, mobile_appointment_calendar_sync: { owner_email: 'casey@savingkc.com' },
   }).sync.ownerEmail).toBe('casey@savingkc.com')
   expect(mapMobileAppointment(appointment).sync.ownerEmail).toBeNull()
+})
+
+describe('standalone appointment effects', () => {
+  it('persists without a synthetic lead or seller lifecycle/conversion', async () => {
+    vi.clearAllMocks()
+    const standalone = { ...appointment, lead_id: null, provider_sync_status: 'synced' }
+    mocks.rpc.mockResolvedValue({ data: { created: true, changed: true, replayed: false, appointment: standalone }, error: null })
+    mocks.calendar.mockResolvedValue({ status: 'synced' })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({ single: async () => ({ data: standalone, error: null }) }) }) })
+    const result = await executeMobileAppointmentCommand({ ...command, leadId: null, payload: { ...command.payload, leadId: null } })
+    expect(result.appointment.leadId).toBeNull()
+    expect(result.sideEffects).toMatchObject({ lifecycle: 'not_applicable', conversion: 'not_applicable', provider: 'synced' })
+    expect(mocks.lifecycle).not.toHaveBeenCalled()
+    expect(mocks.conversion).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls[0][1].p_lead_id).toBeNull()
+  })
+
+  it('rejects a standalone command that comes back attached to a seller', async () => {
+    vi.clearAllMocks()
+    mocks.rpc.mockResolvedValue({ data: { created: true, changed: true, replayed: false, appointment }, error: null })
+    mocks.calendar.mockResolvedValue({ status: 'synced' })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({ single: async () => ({ data: appointment, error: null }) }) }) })
+    await expect(executeMobileAppointmentCommand({
+      ...command, leadId: null, payload: { ...command.payload, leadId: null },
+    })).rejects.toMatchObject({
+      code: 'unavailable',
+      message: 'A standalone event cannot be attached to a seller.',
+    })
+  })
 })

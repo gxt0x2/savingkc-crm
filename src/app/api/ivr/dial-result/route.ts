@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
-import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { phoneRateLimit } from '@/middleware/rate-limit'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
@@ -13,6 +10,7 @@ import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import {
   buildDirectInboundLeadSeed,
 } from '@/lib/operating-model/direct-inbound-intake'
+import { directInboundClientIdentity } from '@/lib/telephony/direct-inbound-ring'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
@@ -23,16 +21,14 @@ import {
   parseCallDurationSeconds,
 } from '@/lib/call-quality-events'
 import {
-  googleAdsMissedCallerMessage,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
-function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+function inboundClientMetadata(calledNumber: string): { agent_identity?: string } {
+  const agentIdentity = directInboundClientIdentity(calledNumber)
+  return agentIdentity ? { agent_identity: agentIdentity } : {}
 }
 
 function phoneLookupVariants(raw: string): string[] {
@@ -153,6 +149,15 @@ async function ensureUnknownDirectInboundContact(input: {
   }
 
   if (!leadId) return { id: null, name: leadName }
+
+  queueInboundLeadAttribution({
+    leadId,
+    channel: 'call',
+    callerNumber: input.from,
+    calledNumber: input.calledNumber,
+    callSid: input.callSid,
+    prospectMatched: prospectMatches.length > 0,
+  })
 
   await supabase.from('ari_briefing_events').insert({
     event_type: 'inbound_call',
@@ -348,6 +353,7 @@ export async function POST(req: Request) {
           dialCallDuration,
           type,
           is_test: isInternalTestCaller,
+          ...inboundClientMetadata(calledNumber),
           ...(isGoogleAdsCall && {
             source: googleAdsProfile.source,
             traffic_source: 'google_ads',
@@ -395,31 +401,36 @@ export async function POST(req: Request) {
   }
 
   // ── Nobody answered ──
+  // Push and team SMS are the real missed-call alerts, and they fire only when
+  // the dialed party was no-answer or busy. Canceled and failed dials still log.
+  const shouldSendMissedCallAlert = dialStatus === 'no-answer' || dialStatus === 'busy'
 
   // For direct calls, alert the agent who owns that number only (no tasks/SMS to caller)
   if (isDirect && from) {
-    const missedMsg = `MISSED: Direct call from ${formatPhone(from)} to your company line. Going to voicemail.`
-    await sendTeamLeadAlert({
-      leadId: resolvedLeadId,
-      smsBody: missedMsg,
-      trigger: 'direct_missed_call_alert',
-      source: 'direct_inbound_call',
-      calledNumber,
-      push: {
-        title: 'Missed Direct Call',
-        body: `${formatPhone(from)} called your company line.`,
-        url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
-        tag: 'direct-missed-call',
-      },
-      metadata: { from, calledNumber, callSid: parentCallSid, dialStatus },
-    })
+    if (shouldSendMissedCallAlert) {
+      const missedMsg = `MISSED: Direct call from ${formatPhone(from)} to your company line. Going to voicemail.`
+      await sendTeamLeadAlert({
+        leadId: resolvedLeadId,
+        smsBody: missedMsg,
+        trigger: 'direct_missed_call_alert',
+        source: 'direct_inbound_call',
+        calledNumber,
+        push: {
+          title: 'Missed Direct Call',
+          body: `${formatPhone(from)} called your company line.`,
+          url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
+          tag: 'direct-missed-call',
+        },
+        metadata: { from, calledNumber, callSid: parentCallSid, dialStatus },
+      })
+    }
 
     await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
       activity_type: 'call',
       description: `Missed direct call from ${callerLabel} to ${routing.primary.name}`,
       agent: 'System',
-      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
+      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type, ...inboundClientMetadata(calledNumber) }
     })
   }
 
@@ -441,6 +452,7 @@ export async function POST(req: Request) {
           dialCallDuration,
           type,
           is_test: isInternalTestCaller,
+          ...inboundClientMetadata(calledNumber),
           source: googleAdsProfile.source,
           traffic_source: 'google_ads',
           campaign: googleAdsProfile.campaign,
@@ -451,32 +463,34 @@ export async function POST(req: Request) {
       })
 
     } else {
-    // Alert both agents for IVR calls
-    const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${formatPhone(from)} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
-    await sendTeamLeadAlert({
-      leadId: resolvedLeadId,
-      smsBody: missedMsg,
-      trigger: 'ivr_missed_call_alert',
-      source: 'inbound_ivr',
-      calledNumber,
-      push: {
-        title: 'Missed Inbound Call',
-        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${formatPhone(from)} reached voicemail.`,
-        url: `/leads/${resolvedLeadId}`,
-        tag: 'ivr-missed-call',
-      },
-      metadata: {
-        outcome: 'missed',
-        direction: 'inbound',
-        from,
+    // Alert both agents for IVR calls that actually rang out or were busy.
+    if (shouldSendMissedCallAlert) {
+      const missedMsg = `MISSED: Inbound caller ${formatPhone(from)} — nobody answered. Call them back.\n${BASE_URL}/leads/${resolvedLeadId}`
+      await sendTeamLeadAlert({
+        leadId: resolvedLeadId,
+        smsBody: missedMsg,
+        trigger: 'ivr_missed_call_alert',
+        source: 'inbound_ivr',
         calledNumber,
-        callSid: parentCallSid,
-        dialStatus,
-        dialCallSid,
-        dialCallDuration,
-        type,
-      },
-    })
+        push: {
+          title: 'Missed Inbound Call',
+          body: `Caller ${formatPhone(from)} reached voicemail.`,
+          url: `/leads/${resolvedLeadId}`,
+          tag: 'ivr-missed-call',
+        },
+        metadata: {
+          outcome: 'missed',
+          direction: 'inbound',
+          from,
+          calledNumber,
+          callSid: parentCallSid,
+          dialStatus,
+          dialCallSid,
+          dialCallDuration,
+          type,
+        },
+      })
+    }
 
     // Log missed call
     await supabase.from('lead_activities').insert({
@@ -484,70 +498,13 @@ export async function POST(req: Request) {
       activity_type: 'call',
       description: `Both agents missed inbound ${type} call from ${formatPhone(from)}`,
       agent: 'System',
-      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
+      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type, ...inboundClientMetadata(calledNumber) }
     })
 
     }
   }
 
-  // Auto-text ONLY when both agents miss IVR calls (not direct calls)
-  if (from && resolvedLeadId && !isDirect && !isInternalTestCaller) {
-    const { allowed: phoneOk } = phoneRateLimit(from)
-    if (phoneOk) {
-      const isColdCallback = calledNumber && ['+18163100845','+18162538313','+18164761344','+18164761589','+18166404701','+18165788107','+18166408032','+18166536616'].includes(calledNumber)
-      const autoText = isGoogleAdsCall
-        ? googleAdsMissedCallerMessage(calledNumber)
-        : isColdCallback
-        ? `Hey, sorry we missed you! We recently reached out about a property in your area. If you're thinking about selling, reply YES and we'll give you a call back.`
-        : type === 'seller'
-          ? `Hi, this is Saving KC Homebuyers. Sorry we missed your call! Are you still looking to sell your property? We'd love to chat — reply YES or call us back anytime.`
-          : `Hi, this is Saving KC Homebuyers. Sorry we missed your call! How can we help? Feel free to call back or reply to this text.`
-      const followupTrigger = isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup'
-      const isDupe = await isDuplicateSms(from, autoText)
-      if (!isDupe) {
-        try {
-          const blockReason = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
-          if (blockReason) {
-            console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: blockReason })
-          } else {
-            sendDelayed(async () => {
-              const stillBlocked = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
-              if (stillBlocked) {
-                console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: stillBlocked })
-                return
-              }
-              await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from, senderUse: 'reply' })
-              await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, resolvedLeadId)
-              await supabase.from('lead_activities').insert({
-                lead_id: resolvedLeadId,
-                activity_type: 'sms',
-                description: autoText,
-                agent: 'System',
-                metadata: {
-                  direction: 'outbound',
-                  to: from,
-                  trigger: followupTrigger,
-                  ...(isGoogleAdsCall && {
-                    source: googleAdsProfile.source,
-                    traffic_source: 'google_ads',
-                    campaign: googleAdsProfile.campaign,
-                    tracking_number: googleAdsProfile.trackingDigits,
-                    landing_page: googleAdsProfile.landingPage,
-                    phone_profile: googleAdsProfile.key,
-                    calledNumber,
-                  }),
-                }
-              })
-            }, isGoogleAdsCall ? 60 : 180, isGoogleAdsCall ? 90 : 300)
-          }
-        } catch (error) {
-          console.error(`[IVR/dial-result] ${followupTrigger} suppression check failed closed:`, error)
-        }
-      }
-    }
-  }
-
-  // Route caller to voicemail
+  // Route caller to voicemail. Do not text the caller.
   const vmAgent = isGoogleAdsCall ? 'SavingKC' : routing.primary.name
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

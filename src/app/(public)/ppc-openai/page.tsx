@@ -3,10 +3,11 @@ import '../ppc/sell.css'
 import { SellLanding } from '../ppc/SellLanding'
 import { GoogleTagManager } from '../ppc/GoogleTagManager'
 import { OpenAIAdsPixel } from '../ppc/OpenAIAdsPixel'
+import { trimPhoneConfig } from '@/lib/phone-config'
 import { DEFAULT_PPC_CAMPAIGN } from '@/lib/ppc/campaigns'
 
-const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? DEFAULT_PPC_CAMPAIGN.phoneDisplay
-const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_PHONE_TEL ?? DEFAULT_PPC_CAMPAIGN.phoneTel).replace(/[^+\d]/g, '')
+const PPC_PHONE_DISPLAY = trimPhoneConfig(process.env.NEXT_PUBLIC_PPC_PHONE) || DEFAULT_PPC_CAMPAIGN.phoneDisplay
+const PPC_PHONE_TEL = (trimPhoneConfig(process.env.NEXT_PUBLIC_PPC_PHONE_TEL) || DEFAULT_PPC_CAMPAIGN.phoneTel).replace(/[^+\d]/g, '')
 const SHOW_BOOKING_CTA = false
 
 export const metadata: Metadata = {

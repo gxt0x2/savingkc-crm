@@ -16,6 +16,8 @@ export interface CallLogCommand {
   notes: string | null
   dialSource: DialerCallIntentSource | null
   dialSurface: InteractiveDialerSurface | null
+  dialResult: 'connected' | 'no_answer' | 'hangup_before_ring' | null
+  endReason: 'disconnect' | 'error' | null
 }
 
 export type CallLogCommandResult =
@@ -50,6 +52,8 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
 
   const dialSource = text(body.dial_source) as DialerCallIntentSource | null
   const dialSurface = text(body.dial_surface) as InteractiveDialerSurface | null
+  const dialResult = text(body.dial_result)
+  const endReason = text(body.end_reason)
 
   return {
     ok: true,
@@ -74,6 +78,8 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
         'mobile_lead',
       ].includes(dialSource) ? dialSource : null,
       dialSurface: dialSurface && ['crm', 'prospecting'].includes(dialSurface) ? dialSurface : null,
+      dialResult: dialResult === 'connected' || dialResult === 'no_answer' || dialResult === 'hangup_before_ring' ? dialResult : null,
+      endReason: endReason === 'disconnect' || endReason === 'error' ? endReason : null,
     },
   }
 }

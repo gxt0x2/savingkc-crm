@@ -20,6 +20,7 @@ import {
   type AssistantActor,
 } from '@/lib/assistant/auth'
 import { getAiChangeProposalsForLead } from '@/lib/server/ai-change-proposals'
+import { runLineTypeLookup } from '@/lib/server/line-type-lookup'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type ToolContext = {
@@ -263,5 +264,47 @@ export function registerCrmMcpTools(server: McpServer) {
       annotations: READ_ONLY,
     },
     ({ days }, context) => runRead('marketing_summary', context, () => readAssistantMarketingSummary(supabaseAdmin(), days ?? 30), { companyWide: true }),
+  )
+
+  server.registerTool(
+    'crm_line_type_lookup',
+    {
+      title: 'Twilio line status and type lookup',
+      description: 'Look up Twilio line status and line type intelligence for up to 200 phone numbers (E.164 or 10-digit US). Argument: phones, a list of strings. Each number is one Lookup v2 request for line_status and line_type_intelligence, the same packages as lookupPhoneLine, at $0.015 ($0.007 line status + $0.008 line type). Returns one row per input number (e164, valid, line_type, carrier, checked_at, line_status, line_status_error, error) and a csv string with header e164,valid,line_type,carrier,checked_at,line_status,line_status_error. line_status is active, inactive, unreachable, or unknown. Dedupes numbers inside the request and refuses the call before today\'s America/Chicago lookups would pass 1,000. Uses the CRM server\'s existing Twilio credentials. Does not write prospect, phone, DNC, opt-out, or TCPA records.',
+      inputSchema: {
+        phones: z.array(z.string().min(1).max(40)).min(1).max(200),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ phones }, context) => {
+      const email = context.authInfo?.extra?.email
+      if (typeof email !== 'string' || !email.trim()) {
+        return { ...content({ ok: false, error: 'CRM MCP identity is unavailable.' }), isError: true }
+      }
+      const actor = await resolveAssistantActor(email)
+      if (!actor) return { ...content({ ok: false, error: 'CRM profile is not authorized.' }), isError: true }
+      if (!assistantActorCanReadCompanyWide(actor)) {
+        return { ...content({ ok: false, error: 'forbidden', message: 'Company-wide access requires an owner or admin profile.' }), isError: true }
+      }
+      const requestId = String(context.requestId || crypto.randomUUID()).slice(0, 160)
+      try {
+        const result = await runLineTypeLookup({
+          actor,
+          phones,
+          threadId: context.sessionId,
+          requestId,
+        })
+        if (result.status >= 400) return { ...content(result.body), isError: true }
+        return content(result.body)
+      } catch {
+        console.error('[crm-mcp] failed', { action: 'line_type_lookup' })
+        return { ...content({ ok: false, error: 'Line type lookup is temporarily unavailable.' }), isError: true }
+      }
+    },
   )
 }

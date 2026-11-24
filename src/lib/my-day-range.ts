@@ -47,7 +47,7 @@ const CENTRAL_PARTS = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 })
 
-function centralDateKey(value: Date): string {
+export function centralDateKey(value: Date): string {
   return DATE_KEY.format(value)
 }
 

@@ -55,6 +55,11 @@ scripts/.reprocess-progress.jsonl
 supabase/.temp/
 .env*.local
 
+# Heartland Matrix exports. Never commit MLS files.
+/data/mls-inbox/**
+/data/mls-processed/**
+*.mls.csv
+
 # Disposable Email practice app build output
 /tests/email-local/.next/
 /tests/email-local/next-env.d.ts

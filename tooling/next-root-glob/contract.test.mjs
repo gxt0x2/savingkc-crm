@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
+import { globSync } from './index.mjs';
 import nextHelper from '@next/eslint-plugin-next/dist/utils/get-root-dirs.js';
 const { getRootDirs } = nextHelper;
-import { globSync } from './index.mjs';
 const cases = JSON.parse(fs.readFileSync(new URL('./contract-cases.json',import.meta.url),'utf8'));
 
 test('actual Next helper preserves the 130 reviewed filesystem contracts', () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { readActorGoogleSessionGrant } from '@/lib/mobile-api/google-session-grant'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -11,6 +12,7 @@ export function OPTIONS() {
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireMobileUser(req)
+    const grant = await readActorGoogleSessionGrant(user.email)
     return NextResponse.json(
       {
         user: {
@@ -32,6 +34,11 @@ export async function GET(req: NextRequest) {
           handoffAcceptance: true,
           aiAssistantReadOnly: true,
           calendar: true,
+          googleCalendar: grant.googleCalendar,
+          gmail: grant.gmail,
+        },
+        messaging: {
+          email: grant.email,
         },
       },
       { headers: mobileNoStoreHeaders() },

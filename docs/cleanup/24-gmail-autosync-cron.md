@@ -2,6 +2,8 @@
 
 Date: 2026-05-05
 
+Superseded 2026-10-08: the project is on a plan that allows minute crons, and the schedule is now `*/5 * * * *` (see `src/config/system-registry.json`).
+
 ## What Changed
 
 - Added `/api/cron/sync-gmail` to Vercel cron.

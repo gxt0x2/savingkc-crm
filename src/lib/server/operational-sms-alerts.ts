@@ -22,7 +22,7 @@ function crmUrl(path: string): string {
 }
 
 async function sendOperationalSmsAlert(input: {
-  event: 'andon_raised' | 'call_review_submitted' | 'mojo_ingestion_failure'
+  event: 'andon_raised' | 'call_review_submitted' | 'mojo_ingestion_failure' | 'tracking_health'
   recipient: string
   body: string
   referenceId: string
@@ -103,5 +103,19 @@ export async function sendCallReviewSubmittedSmsAlert(input: {
     recipient: ernestPhone(),
     referenceId: input.activityId,
     body: `Call review submitted by ${input.submittedBy} — ${input.frameworkLabel}. Open: ${crmUrl(path)}`,
+  })
+}
+
+export async function sendTrackingHealthSmsAlert(input: {
+  runDate: string
+  failures: string[]
+}): Promise<OperationalSmsAlertResult> {
+  const list = input.failures.slice(0, 4).join('; ')
+  const more = input.failures.length > 4 ? ` (+${input.failures.length - 4} more)` : ''
+  return sendOperationalSmsAlert({
+    event: 'tracking_health',
+    recipient: ernestPhone(),
+    referenceId: `tracking-health-${input.runDate}`,
+    body: `Tracking needs attention: ${list}${more}. Details: ${crmUrl('/marketing')}`,
   })
 }

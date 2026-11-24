@@ -34,6 +34,8 @@ export interface HeirPhone {
   is_verified_contact?: boolean
   verified_at?: string | null
   verified_by?: string | null
+  voice_hold?: boolean
+  voice_hold_reason?: string | null
 }
 
 export interface Heir {
@@ -82,4 +84,5 @@ export function isAutoCallablePhone(phone: HeirPhone): boolean {
     && phone.status !== 'removed'
     && phone.connected?.toLowerCase() !== 'disconnected'
     && !dispositionStopsNumber(phone.last_disposition)
+    && !phone.voice_hold
 }

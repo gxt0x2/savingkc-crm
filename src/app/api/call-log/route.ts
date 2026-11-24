@@ -82,6 +82,8 @@ export async function POST(req: Request) {
             source,
             dial_source: command.dialSource,
             dial_surface: command.dialSurface,
+            ...(command.dialResult && { dial_result: command.dialResult }),
+            ...(command.endReason && { end_reason: command.endReason }),
             action,
             client_attempt_id: command.clientAttemptId,
             is_internal: true,
@@ -104,8 +106,8 @@ export async function POST(req: Request) {
           lead_id: context.leadId,
           activity_type: 'call',
           description: isHeirCall
-            ? `Outbound call to ${heirLabel} — ${outboundResultLabel(finalStatus, finalDuration)}`
-            : `Outbound call to ${context.leadName} — ${outboundResultLabel(finalStatus, finalDuration)}`,
+            ? `Outbound call to ${heirLabel} — ${outboundResultLabel(finalStatus, finalDuration, command.dialResult)}`
+            : `Outbound call to ${context.leadName} — ${outboundResultLabel(finalStatus, finalDuration, command.dialResult)}`,
           agent: actor.name,
           metadata: {
             direction: 'outbound',
@@ -122,6 +124,8 @@ export async function POST(req: Request) {
             source,
             dial_source: command.dialSource,
             dial_surface: command.dialSurface,
+            ...(command.dialResult && { dial_result: command.dialResult }),
+            ...(command.endReason && { end_reason: command.endReason }),
             action,
             client_attempt_id: command.clientAttemptId,
             is_internal: true,
@@ -304,7 +308,8 @@ function isConnectedOutbound(status: string, outcome: string, disposition: strin
   return status === 'completed' || outcome === 'connected' || disposition === 'answered'
 }
 
-function outboundResultLabel(status: string, duration: number): string {
+function outboundResultLabel(status: string, duration: number, dialResult?: string | null): string {
+  if (dialResult === 'hangup_before_ring') return 'hung up before ring'
   if (status === 'completed') return `${duration}s`
   if (status === 'busy') return 'busy'
   if (status === 'failed') return 'failed'

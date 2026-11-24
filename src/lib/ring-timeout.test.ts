@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parseDialTimeout, DEFAULT_DIAL_TIMEOUT } from './ring-timeout'
+import {
+  parseDialTimeout,
+  DEFAULT_DIAL_TIMEOUT,
+  dialTimeoutFallbackForSource,
+  MOBILE_DIAL_TIMEOUT,
+  WEB_CLICK_TO_CALL_DIAL_TIMEOUT,
+} from './ring-timeout'
 
 describe('parseDialTimeout', () => {
   it('converts rings to ~6s each', () => {
@@ -24,5 +30,22 @@ describe('parseDialTimeout', () => {
 
   it('honors a custom fallback', () => {
     expect(parseDialTimeout(null, 20)).toBe(20)
+  })
+})
+
+describe('dialTimeoutFallbackForSource', () => {
+  it('gives every mobile source 45 seconds and keeps web click-to-call at 60', () => {
+    expect(dialTimeoutFallbackForSource('mobile_manual')).toBe(MOBILE_DIAL_TIMEOUT)
+    expect(dialTimeoutFallbackForSource('mobile_lead')).toBe(45)
+    expect(dialTimeoutFallbackForSource('mobile_callback')).toBe(45)
+    expect(dialTimeoutFallbackForSource('web_click_to_call')).toBe(WEB_CLICK_TO_CALL_DIAL_TIMEOUT)
+  })
+
+  it('leaves non-mobile outbound sources on the historical default', () => {
+    expect(dialTimeoutFallbackForSource('web_manual')).toBeUndefined()
+    expect(dialTimeoutFallbackForSource('web_heir_dialer')).toBeUndefined()
+    expect(dialTimeoutFallbackForSource('legacy_sdk')).toBeUndefined()
+    expect(dialTimeoutFallbackForSource(null)).toBeUndefined()
+    expect(parseDialTimeout(null, dialTimeoutFallbackForSource('web_manual'))).toBe(DEFAULT_DIAL_TIMEOUT)
   })
 })

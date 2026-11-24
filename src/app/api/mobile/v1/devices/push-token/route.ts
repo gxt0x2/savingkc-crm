@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isMobilePushConfigured } from '@/lib/mobile-push'
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
 import { resolveMobileScopedActor } from '@/lib/mobile-api/authorized-lead'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
     }, { onConflict: 'project_id,token' })
     if (error) return json({ error: 'Device registration could not be saved. Retry when available.' }, 503)
     // Registration is not remote delivery or Twilio VoIP credential readiness.
-    return json({ ok: true, registered: true, deliveryConfigured: false })
+    return json({ ok: true, registered: true, deliveryConfigured: isMobilePushConfigured() })
   } catch (error) {
     return json({ error: error instanceof MobileAuthError ? error.message : 'Device registration is temporarily unavailable' }, error instanceof MobileAuthError ? error.status : 503)
   }

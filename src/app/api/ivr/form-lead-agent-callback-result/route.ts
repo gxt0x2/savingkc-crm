@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { trimPhoneConfig } from '@/lib/phone-config'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
@@ -28,12 +29,12 @@ export async function POST(req: Request) {
   try {
     const url = new URL(req.url)
     const leadId = url.searchParams.get('leadId') || ''
-    const leadPhone = url.searchParams.get('leadPhone') || ''
-    const callerId = url.searchParams.get('callerId') || ''
+    const leadPhone = trimPhoneConfig(url.searchParams.get('leadPhone'))
+    const callerId = trimPhoneConfig(url.searchParams.get('callerId'))
     const trigger = url.searchParams.get('trigger') || 'ppc_form_submit'
     const batchId = url.searchParams.get('batchId') || ''
     const agentName = url.searchParams.get('agentName') || 'Agent'
-    const agentPhone = url.searchParams.get('agentPhone') || ''
+    const agentPhone = trimPhoneConfig(url.searchParams.get('agentPhone'))
     const callbackSource = trigger.startsWith('ppc_') ? 'ppc_form_agent_callback' : 'lead_form_agent_callback'
 
     const body = await req.formData()

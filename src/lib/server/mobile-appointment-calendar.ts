@@ -26,6 +26,13 @@ type GoogleEvent = {
 export type MobileCalendarSyncOutcome = {
   status: 'synced' | 'pending' | 'failed' | 'not_configured'
   warning?: string
+  reason?: string | null
+}
+
+const MISSING_CALENDAR_GRANT = new Set(['no_token', 'missing_calendar', 'google_oauth_not_configured'])
+
+export function missingCalendarGrant(reason: string | null | undefined): boolean {
+  return MISSING_CALENDAR_GRANT.has(reason ?? '')
 }
 
 export class MobileCalendarRetryError extends Error {
@@ -200,9 +207,7 @@ export async function syncMobileAppointmentCalendar(input: {
       appointmentId: input.appointmentId,
     })
     if (!access.ok) {
-      status = access.result.reason === 'no_token' || access.result.reason === 'missing_calendar'
-        || access.result.reason === 'google_oauth_not_configured'
-        ? 'not_configured' : 'failed'
+      status = missingCalendarGrant(access.result.reason) ? 'not_configured' : 'failed'
       reason = access.result.reason
     } else {
       const remote = await syncMobileAppointmentGoogleEvent({
@@ -244,7 +249,7 @@ export async function syncMobileAppointmentCalendar(input: {
   }
   if (status === 'synced') return { status }
   if (status === 'not_configured') {
-    return { status, warning: 'Google Calendar is not connected for the original appointment owner.' }
+    return { status, reason, warning: 'Google Calendar is not connected for the original appointment owner.' }
   }
   return { status: 'failed', warning: 'The appointment was saved, but Google Calendar was not updated.' }
 }

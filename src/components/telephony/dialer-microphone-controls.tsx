@@ -17,12 +17,10 @@ export function DialerMicrophoneControls({ deviceRef, status, open, sessionId = 
   const [testing, setTesting] = useState(false)
   const [level, setLevel] = useState(0)
   const [message, setMessage] = useState('Choose your microphone and test it before calling.')
-  const [completedSessionId, setCompletedSessionId] = useState<string | null>(() => microphoneCheckCompleted(sessionId) ? sessionId : null)
+  const [passedFor, setPassedFor] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const completed = Boolean(sessionId && completedSessionId === sessionId)
-  useEffect(() => {
-    setCompletedSessionId(microphoneCheckCompleted(sessionId) ? sessionId : null)
-  }, [sessionId])
+  const passToken = sessionId ?? 'no-session'
+  const dismissed = passedFor === passToken || Boolean(sessionId && microphoneCheckCompleted(sessionId))
   useEffect(() => {
     if (!open || status !== 'ready') return
     let cancelled = false
@@ -61,18 +59,16 @@ export function DialerMicrophoneControls({ deviceRef, status, open, sessionId = 
       const maximum = await testSelectedMicrophone(device, setLevel, controller.signal)
       if (!controller.signal.aborted && maximum >= 0.003) {
         if (sessionId) {
-          try { window.sessionStorage.setItem(`${SESSION_CHECK_PREFIX}${sessionId}`, 'complete') } catch { /* the in-memory session state still hides the completed check */ }
-          setCompletedSessionId(sessionId)
-        } else {
-          setMessage('Input signal detected. Confirm two-way speech with a test call.')
+          try { window.sessionStorage.setItem(`${SESSION_CHECK_PREFIX}${sessionId}`, 'complete') } catch { /* the in-memory pass still hides the completed check */ }
         }
+        setPassedFor(passToken)
       } else if (!controller.signal.aborted) {
         setMessage('No usable input signal detected. Select another microphone and test again.')
       }
     } catch (error) { if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : 'Microphone check failed.') }
     finally { if (abortRef.current === controller) { abortRef.current = null; setTesting(false); setLevel(0) } }
   }
-  if (completed) return null
+  if (dismissed) return null
 
   const sectionClass = workspace
     ? 'space-y-2 rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] p-3 text-[var(--prospecting-text)]'

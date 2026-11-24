@@ -83,56 +83,56 @@
         "maximumLines": 800,
         "owner": "Acquisitions",
         "reason": "The guided audio review and AI pre-score remain consolidated during reviewer validation; freeze growth while the scorecard overlays are extracted into owned components.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/(app)/dispo/pipeline/page.tsx",
         "maximumLines": 863,
         "owner": "Dispositions",
         "reason": "Existing operations pipeline restored from the prior portal; freeze growth while the workflow is split into owned components.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/(app)/dispo/tc/page.tsx",
         "maximumLines": 1858,
         "owner": "Transaction Coordination",
         "reason": "Existing transaction coordinator portal restored as one release unit; freeze growth while lanes and panels are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/api/marketing/ads-command/route.ts",
         "maximumLines": 1727,
         "owner": "Marketing",
         "reason": "Google Ads read model remains consolidated during the provider recovery; freeze growth while report builders are separated.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/globals.css",
         "maximumLines": 1105,
         "owner": "Design System",
         "reason": "The current CRM shell and restored operations portals share legacy global tokens; freeze growth while route themes move into scoped layers.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/lib/operating-model/communication-template-catalog.ts",
         "maximumLines": 737,
         "owner": "Operations",
         "reason": "The approved acquisitions and dispositions template catalog is kept intact for this release; freeze growth while templates move to data-backed modules.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "apps/mobile/App.tsx",
         "maximumLines": 1115,
         "owner": "Acquisitions",
         "reason": "The existing native shell remains consolidated while the server-authorized call path ships; freeze growth while phone and queue flows are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/components/telephony/telephony-bar.tsx",
         "maximumLines": 1741,
         "owner": "Acquisitions",
         "reason": "The shared softphone now bridges provider events to the durable server-owned attempt lifecycle; freeze growth while call state and device controls are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/components/email/email-thread-panel.tsx",
@@ -293,7 +293,7 @@
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
       "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/leads/[id]/reenrich", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars", "lead_journey_timeline"],
       "environment": ["CRON_SECRET"],
       "crons": [
         {
@@ -309,9 +309,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/conversations"],
-      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/notifications"],
-      "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET"]
+      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/conversations/mms", "/api/notifications", "/api/admin/backfill-inbound-mms", "/api/cron/backfill-inbound-mms"],
+      "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log", "lead_activities"],
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "CRON_SECRET"]
     },
     {
       "id": "dialer",
@@ -319,9 +319,12 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/dialer"],
-      "apiRoutes": ["/api/crm/call-intents", "/api/prospecting/call-intents", "/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/control", "/api/dialer/sessions/[id]/control/operations", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/mobile/v1/twilio/token", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
-      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_VOIP_PUSH_CREDENTIAL_SID", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE"]
+      "apiRoutes": ["/api/crm/call-intents", "/api/prospecting/call-intents", "/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/control", "/api/dialer/sessions/[id]/control/operations", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/mobile/v1/twilio/token", "/api/twiml-voice", "/api/twilio-inbound-client-status", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify", "/api/cron/line-check", "/api/phones/line-check", "/api/recordings", "/api/recordings/[sid]"],
+      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "prospects", "prospect_phones", "phone_line_checks", "phone_line_check_cap_log", "phone_line_check_budget", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_VOIP_PUSH_CREDENTIAL_SID", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE", "MOBILE_IN_APP_VOICE", "MOBILE_PERSONAL_FORWARD", "MOJO_CALLBACK_NUMBERS", "CRON_SECRET", "LINE_CHECK_COST_USD", "LINE_CHECK_BLOCK_ENABLED", "LINE_CHECK_FRESH_RESERVE_USD"],
+      "crons": [
+        { "path": "/api/cron/line-check", "schedule": "0 8 * * *" }
+      ]
     },
     {
       "id": "prospecting",
@@ -329,9 +332,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/prospecting/foreclosure", "/prospecting/foreclosure/[id]", "/prospecting/excess-proceeds", "/dialer", "/conversations"],
-      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/prospecting/contact-notes", "/api/prospecting/foreclosure", "/api/prospecting/foreclosure/import", "/api/prospecting/foreclosure/ingest", "/api/cron/foreclosure-ingest", "/api/prospecting/foreclosure/[id]", "/api/prospecting/foreclosure/[id]/call", "/api/prospecting/excess-proceeds", "/api/prospecting/excess-proceeds/import", "/api/prospecting/excess-proceeds/[leadId]", "/api/workers/prospecting-campaigns"],
-      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_member_contacts", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "prospects", "prospect_phones", "mortgage_foreclosure_prospects", "mortgage_foreclosure_ingest_controls", "county_source_reconciliation_audit", "sms_opt_outs", "sms_delivery_log", "crm_excess_proceeds"],
-      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ACCESS_TOKEN", "CRM_ENV_FILE", "GOOGLE_MAPS_API_KEY", "FORECLOSURE_INGEST_PROVIDER", "FORECLOSURE_INGEST_ACTOR_EMAIL", "FORECLOSURE_INGEST_CSV_URL", "FORECLOSURE_NR_PAGE_CAP", "FORECLOSURE_STALE_ALERT_TO", "FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS", "RESEND_API_KEY", "RESEND_FROM_EMAIL"],
+      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/prospecting/contact-notes", "/api/prospecting/foreclosure", "/api/prospecting/foreclosure/import", "/api/prospecting/foreclosure/ingest", "/api/prospecting/foreclosure/intake", "/api/prospecting/foreclosure/intake/review", "/api/cron/foreclosure-ingest", "/api/prospecting/foreclosure/[id]", "/api/prospecting/foreclosure/[id]/call", "/api/prospecting/excess-proceeds", "/api/prospecting/excess-proceeds/import", "/api/prospecting/excess-proceeds/[leadId]", "/api/workers/prospecting-campaigns"],
+      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_member_contacts", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "prospects", "prospect_phones", "mortgage_foreclosure_prospects", "mortgage_foreclosure_ingest_controls", "mortgage_foreclosure_intake", "mortgage_foreclosure_intake_sources", "county_source_reconciliation_audit", "sms_opt_outs", "sms_delivery_log", "crm_excess_proceeds", "katherine_deceased_load_stage", "katherine_deceased_load_stage_parts", "katherine_deceased_member_stage"],
+      "environment": ["CRON_SECRET", "FORECLOSURE_INTAKE_SECRET", "KS_FORECLOSURE_LICENSE_CONFIRMED", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ACCESS_TOKEN", "CRM_ENV_FILE", "GOOGLE_MAPS_API_KEY", "FORECLOSURE_INGEST_PROVIDER", "FORECLOSURE_INGEST_ACTOR_EMAIL", "FORECLOSURE_INGEST_CSV_URL", "FORECLOSURE_NR_PAGE_CAP", "FORECLOSURE_STALE_ALERT_TO", "FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS", "RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       "crons": [
         {
           "path": "/api/workers/prospecting-campaigns",
@@ -343,6 +346,31 @@
           "schedule": "30 13 * * 1-5",
           "highFrequencyReason": "Weekday county_public foreclosure pull (JoCo sheriff, Legal Record, SouthLaw, NoticeRegistry) plus 24h stale email. No PropStream ingest."
         }
+      ]
+    },
+    {
+      "id": "source_lists",
+      "name": "Source list ledger",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/source-lists/import", "/api/source-lists/dialer-export", "/api/source-lists/rows/[id]"],
+"tables": ["source_lists", "source_list_rows", "source_list_row_files", "source_list_row_status_history", "source_list_dialer_export", "source_list_export_batches", "source_list_export_batch_phones", "prospect_county_backfill_snapshot", "mojo_dnc_ledger", "mojo_dnc_pending", "mojo_encode_queue", "dialer_pool_v1", "dialer_pool_morning_audit_v1", "dialer_master_pool_v1", "dialer_saved_filters_v1", "dialer_deceased_pool_v1"],
+      "environment": ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CRON_SECRET", "ADMIN_API_SECRET", "SOURCE_LIST_IMPORT_URL"]
+    },
+    {
+      "id": "market_check",
+      "name": "Listed and sold market check",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/admin/market-check", "/api/cron/market-check"],
+      "tables": ["mls_market_config", "mls_market_flag_changes", "property_market_checks", "property_market_status_v1", "property_market_latest", "market_ninety_plus_days_v1", "target_zips", "mls_price_thresholds", "mls_export_runs", "mls_market_alerts", "source_list_row_mls_tags", "review_high_price", "source_list_market_phone_review", "parcel_inventory"],
+      "environment": ["MLS_MARKET_CHECK_ENABLED", "EXPIRED_OWNER_CONFIRMED", "KS_EXPIRED_RELEASE_APPROVED", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "crons": [
+        {"path": "/api/cron/market-check", "schedule": "30 7 * * *"},
+        {"path": "/api/cron/market-check", "schedule": "30 8 * * *"},
+        {"path": "/api/cron/market-check", "schedule": "30 9 * * *"}
       ]
     },
     {
@@ -361,9 +389,12 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/leads/create-appointment", "/api/leads/delete-appointment", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete", "/api/mobile/v1/work-items/[id]/cancel"],
+      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/leads/create-appointment", "/api/leads/delete-appointment", "/api/leads/appointment-outcome", "/api/cron/appointment-outcomes", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete", "/api/mobile/v1/work-items/[id]/cancel"],
       "tables": ["appointments", "leads", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
-      "environment": []
+      "environment": ["CRON_SECRET"],
+      "crons": [
+        { "path": "/api/cron/appointment-outcomes", "schedule": "20 12 * * *" }
+      ]
     },
     {
       "id": "acquisitions",
@@ -455,9 +486,9 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/.well-known/oauth-protected-resource", "/oauth/consent"],
-      "apiRoutes": ["/api/mcp", "/api/oauth/decision"],
+      "apiRoutes": ["/api/mcp", "/api/oauth/decision", "/api/ops/line-type-lookup"],
       "tables": ["assistant_query_audit"],
-      "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS"]
+      "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"]
     },
     {
       "id": "workflows",
@@ -502,8 +533,8 @@
       "owner": "Marketing",
       "status": "active",
       "routes": ["/marketing"],
-      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export"],
-      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events"],
+      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export", "/api/cron/tracking-health", "/api/admin/tracking-number-channels"],
+      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events", "tracking_number_channels"],
       "environment": ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN"],
       "crons": [
         {
@@ -519,8 +550,22 @@
         {
           "path": "/api/workers/ppc-conversion-export",
           "schedule": "*/15 * * * *"
+        },
+        {
+          "path": "/api/cron/tracking-health",
+          "schedule": "43 13 * * *"
         }
       ]
+    },
+    {
+      "id": "website_conversion",
+      "name": "Website conversion board",
+      "owner": "Marketing",
+      "status": "active",
+      "routes": ["/marketing/website-conversion", "/marketing/mail"],
+      "apiRoutes": ["/api/marketing/website-conversion", "/api/marketing/mail-drops"],
+      "tables": ["ga4_landing_daily", "ga4_event_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events", "mail_drops", "mail_drop_performance", "tracking_number_channels"],
+      "environment": []
     },
     {
       "id": "email_marketing",
@@ -528,7 +573,7 @@
       "crons": [{"path":"/api/workers/email","schedule":"* * * * *","highFrequencyReason":"Process one reply and one bounded send per minute; receiving and suppression precede outbound work."}],
       "owner": "Marketing",
       "status": "active",
-      "routes": ["/marketing/email", "/email/unsubscribe/[token]"],
+      "routes": ["/marketing/email", "/email/unsubscribe/[token]", "/newsletters"],
       "apiRoutes": [
         "/api/email/workspace",
         "/api/email/contact-rules",
@@ -538,6 +583,7 @@
         "/api/email/domains",
         "/api/email/receiving",
         "/api/email/unsubscribe/[token]",
+        "/api/email/newsletters/signup",
         "/api/webhooks/email/resend",
         "/api/workers/email"
       ],
@@ -579,7 +625,11 @@
         "em_senders",
         "em_webhook_endpoints",
         "em_reply_aliases",
-        "em_preference_tokens"
+        "em_preference_tokens",
+        "em_newsletter_contacts",
+        "em_newsletter_schedules",
+        "email_address_validations",
+        "email_validation_usage"
       ],
       "environment": [
         "EMAIL_CREDENTIALS_KEY_V1",
@@ -605,7 +655,12 @@
         "EMAIL_UI_BASE_URL",
         "EMAIL_UI_AUTH_BYPASS_SECRET",
         "EMAIL_UI_TEST_ACTOR",
-        "NODE_ENV"
+        "NODE_ENV",
+        "NEWSLETTER_OWNER_APPROVED",
+        "ZEROBOUNCE_API_KEY",
+        "EMAIL_VALIDATION_PROVIDER",
+        "MILLIONVERIFIER_API_KEY",
+        "EMAIL_VALIDATION_DAILY_CAP"
       ]
     },
     {
@@ -619,7 +674,7 @@
       "environment": [],
       "retirement": {
         "reason": "The CRM paid-media workspace is Google Ads only. Historical rows remain available during the retention review.",
-        "targetDate": "2026-10-08"
+        "targetDate": "2026-12-08"
       }
     },
     {
@@ -630,9 +685,9 @@
       "routes": [],
       "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status", "/api/auth/google/send", "/api/webhooks/google/gmail"],
       "tables": ["user_oauth_tokens", "lead_emails", "gmail_push_receipts", "system_config"],
-      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_PUBSUB_TOPIC", "GOOGLE_PUBSUB_SUBSCRIPTION", "GOOGLE_PUBSUB_PUSH_AUDIENCE", "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT", "GOOGLE_PUBSUB_PUSH_SECRET", "GMAIL_WATCH_MAILBOX_ALLOWLIST"],
+      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_PUBSUB_TOPIC", "GOOGLE_PUBSUB_SUBSCRIPTION", "GOOGLE_PUBSUB_PUSH_AUDIENCE", "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT", "GOOGLE_PUBSUB_PUSH_SECRET", "GMAIL_WATCH_MAILBOX_ALLOWLIST", "OWNER_EMAIL"],
       "crons": [
-        { "path": "/api/cron/sync-gmail", "schedule": "15 13 * * *" }
+        { "path": "/api/cron/sync-gmail", "schedule": "*/5 * * * *", "highFrequencyReason": "Without Pub/Sub push, polling is the only path that files lead replies and Gmail-composed mail onto the lead timeline and mobile Inbox; a daily pass left them invisible for up to a day." }
       ]
     },
     {
@@ -641,13 +696,14 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/admin/mojo-recovery", "/api/admin/mojo-source-batches", "/api/mojo/sync", "/api/mojo/reprocess", "/api/recordings/mojo/[eventId]", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/cron/sync-mojo-performance", "/api/admin/mojo-health", "/api/admin/mojo-incident", "/api/admin/mojo-performance"],
-      "tables": ["mojo_recovery_runs", "mojo_recovery_incidents", "mojo_evidence_corrections", "mojo_source_call_receipts", "mojo_source_batches", "mojo_call_queue", "crm_mojo_call_events", "crm_mojo_projection_receipts", "crm_mojo_projection_repair_candidates_v2", "crm_contact_methods", "crm_properties", "crm_lead_entity_links", "crm_identity_conflicts", "crm_property_enrichment_jobs", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
-      "environment": ["MOJO_SOURCE_SPOOL_DIR", "MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SESSION_ID", "MOJO_PROVIDER_AGENT_ID", "MOJO_AGENT_KEY", "MOJO_ENV_FILE", "MOJO_LOG_DIR", "MOJO_SYNC_STATE_FILE", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL", "CRON_SECRET", "GROQ_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "apiRoutes": ["/api/admin/mojo-recovery", "/api/admin/mojo-source-batches", "/api/mojo/sync", "/api/mojo/reprocess", "/api/recordings/mojo/[eventId]", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/cron/sync-mojo-performance", "/api/cron/sync-mojo-calls", "/api/cron/backfill-call-recordings", "/api/admin/mojo-health", "/api/admin/mojo-incident", "/api/admin/mojo-performance"],
+      "tables": ["mojo_recovery_runs", "mojo_recovery_incidents", "mojo_evidence_corrections", "mojo_source_call_receipts", "mojo_source_batches", "mojo_call_queue", "crm_mojo_call_events", "crm_mojo_calls", "crm_mojo_projection_receipts", "crm_mojo_projection_repair_candidates_v2", "crm_contact_methods", "crm_properties", "crm_lead_entity_links", "crm_identity_conflicts", "crm_property_enrichment_jobs", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
+      "environment": ["MOJO_SOURCE_SPOOL_DIR", "MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SESSION_ID", "MOJO_PROVIDER_AGENT_ID", "MOJO_AGENT_KEY", "MOJO_ENV_FILE", "MOJO_LOG_DIR", "MOJO_SYNC_STATE_FILE", "MOJO_SUPERVISED_TIMEOUT_MS", "MOJO_MCP_ACCESS_TOKEN", "MOJO_MCP_CLIENT_ID", "MOJO_MCP_CLIENT_SECRET", "MOJO_MCP_REFRESH_TOKEN", "CRM_PERFORMANCE_URL", "CRON_SECRET", "GROQ_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         { "path": "/api/cron/process-mojo-queue", "schedule": "*/2 * * * *", "highFrequencyReason": "Drain one bounded item every two minutes so callbacks and retained evidence do not wait behind a 15-minute poll." },
         { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },
         { "path": "/api/cron/sync-mojo-performance", "schedule": "*/15 13-23 * * 1-5" },
+        { "path": "/api/cron/sync-mojo-calls", "schedule": "*/15 13-23 * * *" },
         { "path": "/api/admin/mojo-health", "schedule": "5,20,35,50 13-23 * * 1-5" }
       ]
     },
@@ -675,6 +731,7 @@
       "status": "active",
       "routes": [],
       "apiRoutes": [
+        "/api/mobile/v1/calls/events",
         "/api/mobile/v1/calls/recent",
         "/api/mobile/v1/calls/[activityId]/recording",
         "/api/mobile/v1/leads/[id]/briefing",
@@ -698,10 +755,11 @@
         "/api/mobile/v1/work-items/[id]/reopen",
         "/api/mobile/v1/work-items/[id]/cancel",
         "/api/mobile/v1/twilio/hangup",
+        "/api/mobile/v1/twilio/registration",
         "/api/mobile/v1/devices/push-token"
       ],
-      "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents"],
-      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE"]
+      "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents", "mobile_voice_attempts"],
+      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE", "EXPO_ACCESS_TOKEN", "MOBILE_PUSH_ENABLED", "MOBILE_IN_APP_VOICE", "MOBILE_PERSONAL_FORWARD"]
     },
     {
       "id": "mobile_device_testing",
@@ -725,6 +783,32 @@
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
+    },
+    {
+      "id": "tax_status_verification",
+      "name": "Live county tax-status gate",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/tax-status-verification", "/api/tax-status/mojo-removal"],
+      "tables": ["tax_status_checks", "tax_status_mojo_removals", "crm_properties", "prospects", "source_list_rows", "mortgage_foreclosure_prospects", "prospecting_campaign_members"],
+      "environment": ["CRON_SECRET", "ADMIN_API_SECRET", "SCRAPER_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "crons": [
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 8 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 9 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 12 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 13 * * *" }
+      ]
+    },
+    {
+      "id": "caller_id_reputation",
+      "name": "Caller ID reputation log",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/ops/caller-id-reputation/log"],
+      "tables": ["caller_id_reputation_log", "caller_id_reputation_latest"],
+      "environment": ["CALLER_ID_LOG_SECRET"]
     }
   ]
 }

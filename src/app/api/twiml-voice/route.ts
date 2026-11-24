@@ -1,9 +1,17 @@
+import { businessMenuTwiml, sayMenu } from '@/lib/telephony/business-line-ivr'
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
-import { parseDialTimeout } from '@/lib/ring-timeout'
+import { dialTimeoutFallbackForSource, parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import {
+  directInboundClientNoun,
+  inboundClientDialCallerId,
+  inboundRingPlan,
+} from '@/lib/telephony/direct-inbound-ring'
+import { lookupInboundCallerName } from '@/lib/telephony/inbound-caller-name'
 import { verifyDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import {
@@ -13,14 +21,14 @@ import {
   type OutboundDialerCallSource,
   type OutboundDialerCallDecision,
 } from '@/lib/server/dialer-call-eligibility'
+import { rememberOutboundParentCallSid } from '@/lib/server/dialer-parent-call'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+18162262552'
-const CASEY_PHONE = normalizePhoneToE164(process.env.CASEY_PHONE) || '+18167564943'
 
 const XML_HEADERS: HeadersInit = {
   'Content-Type': 'text/xml',
@@ -46,16 +54,15 @@ const BLOCKED_OUTBOUND_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
 const EMPTY_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response><Hangup/></Response>`
 
-// Company numbers that ring agent cell directly (no IVR)
-const DIRECT_RING_NUMBERS: Record<string, string> = {
-  '+18166088588': ERNEST_PHONE,
-  '+18166088858': ERNEST_PHONE,
-  '+18167277667': CASEY_PHONE,
-  '+18163754666': CASEY_PHONE,
-}
-
 // Cold call outbound dialing numbers — callbacks get a different IVR.
 const COLD_CALL_NUMBERS = new Set<string>(COLD_CALL_CALLBACK_NUMBERS.map((number) => number.value))
+
+// Locked cold-callback prompt. No company name. Read in the menu voice
+// (ElevenLabs Cecily through <Say>, owner 11/07) since no line is tied to one
+// agent; the checked-in clips are the wrong prompt. Gather timeout is the silence
+// window after this Say finishes, long enough to hear both options and press.
+const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
+const COLD_CALLBACK_GATHER_TIMEOUT = 15
 
 function getFormString(body: FormData, keys: string[]): string | null {
   for (const key of keys) {
@@ -71,20 +78,78 @@ function xmlResponse(body: string, status = 200) {
 
 function outboundRecordingCallback(input: {
   leadId: string | null
+  prospectId: string | null
+  phone: string | null
   clientAttemptId: string | null
   source: OutboundDialerCallSource
 }): string {
   const callback = new URL('/api/twilio-recording-callback', BASE_URL)
   if (input.leadId) callback.searchParams.set('leadId', input.leadId)
+  if (input.prospectId) callback.searchParams.set('prospectId', input.prospectId)
+  // The parent recording leg's To/From are client identifiers. Keep the dialed
+  // PSTN number on the callback so a prospect with no lead can still be resolved.
+  if (input.phone) callback.searchParams.set('phone', input.phone)
   if (input.clientAttemptId) callback.searchParams.set('clientAttemptId', input.clientAttemptId)
   callback.searchParams.set('source', input.source)
   return callback.toString().replaceAll('&', '&amp;')
 }
 
-function outboundStatusCallback(identity: string, clientAttemptId: string | null): string {
+function inboundClientStatusCallback(): string {
+  return new URL('/api/twilio-inbound-client-status', BASE_URL).toString()
+}
+
+function voicemailRedirect(from: string, calledNumber: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=Ernest&amp;from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
+</Response>`
+}
+
+function directInboundTwiml(input: {
+  from: string
+  calledNumber: string
+  identity: string | null
+  cell: string | null
+  callerName?: string
+}): string {
+  const ringsClient = Boolean(input.identity)
+  const clientNoun = directInboundClientNoun(input.calledNumber, ringsClient ? {
+    statusCallback: inboundClientStatusCallback(),
+    callerNumber: input.from,
+    callerName: input.callerName ?? '',
+    calledNumber: input.calledNumber,
+  } : undefined)
+  const cellNoun = input.cell
+    ? `<Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(input.from)}&amp;calledNumber=${encodeURIComponent(input.calledNumber)}">${input.cell}</Number>`
+    : ''
+  const callerId = inboundClientDialCallerId({
+    from: input.from,
+    calledNumber: input.calledNumber,
+    ringsClient,
+  })
+  // Client rings get 60s for CallKit. Cell-only company lines stay at 15s.
+  // No-answer uses the Dial action, which sends the caller to voicemail.
+  // That path does not add a personal cell when the cell noun is omitted.
+  const dialTimeout = ringsClient ? 60 : 15
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(input.from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(input.calledNumber)}&amp;type=direct" method="POST" timeout="${dialTimeout}" callerId="${callerId}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+    ${clientNoun}${cellNoun}
+  </Dial>
+</Response>`
+}
+
+function outboundStatusCallback(
+  identity: string,
+  clientAttemptId: string | null,
+  source: string | null,
+): string {
   const callback = new URL('/api/twilio-call-status', BASE_URL)
   callback.searchParams.set('identity', identity)
   if (clientAttemptId) callback.searchParams.set('clientAttemptId', clientAttemptId)
+  // source lets a later hangup tell a mobile leg from a web dialer leg that
+  // shares the same Twilio client identity.
+  if (source) callback.searchParams.set('source', source)
   return callback.toString().replaceAll('&', '&amp;')
 }
 
@@ -132,6 +197,8 @@ async function blockOutboundCall(
 
 export async function POST(req: Request) {
   let requestKind: RequestKind = 'unknown'
+  let inboundFrom = ''
+  let inboundTo = ''
     let outboundContext: OutboundDialerCallInput = {
       phone: '',
       surface: 'automation',
@@ -160,6 +227,8 @@ export async function POST(req: Request) {
     const callSid = getFormString(body, ['CallSid']) || ''
     const from = getFormString(body, ['From']) || ''
     const to = getFormString(body, ['To']) || ''
+    inboundFrom = from
+    inboundTo = to
 
     // ── OUTBOUND: browser/SDK-initiated call ──
     if (from && from.startsWith('client:')) {
@@ -285,6 +354,30 @@ export async function POST(req: Request) {
             prospectPhoneId,
           }), outboundContext)
         }
+
+        // The phone sends its own attempt id. It has to be the one inside the
+        // signed intent. A different id must not be written onto this call.
+        const suppliedAttemptId = getFormString(body, ['ClientAttemptId', 'clientAttemptId', 'client_attempt_id'])
+        if (suppliedAttemptId && suppliedAttemptId !== clientAttemptId) {
+          return blockOutboundCall(blockedDecision({
+            reason: 'destination_mismatch',
+            reasonSource: 'intent.attempt_mismatch',
+            message: 'The approved call does not match this dial attempt.',
+            normalizedPhone: sanitizedTo,
+            leadId,
+            prospectId,
+            prospectPhoneId,
+          }), outboundContext)
+        }
+
+        // Persist the parent Call SID before the safety check. A slow or failed
+        // TwiML response otherwise leaves the next number in a multi-phone queue
+        // with no provider SID when the child status callback never runs.
+        if (clientAttemptId && callSid) {
+          await rememberOutboundParentCallSid({ clientAttemptId, callSid }).catch((error) => {
+            console.error('[IVR] Failed to remember parent Call SID:', error)
+          })
+        }
       }
 
       const policyInput: OutboundDialerCallInput = {
@@ -320,13 +413,19 @@ export async function POST(req: Request) {
         return blockOutboundCall(decision, policyInput)
       }
 
-      const statusCallback = outboundStatusCallback(identity, clientAttemptId)
-      const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
+      const statusCallback = outboundStatusCallback(identity, clientAttemptId, source)
+      const recordingCallback = outboundRecordingCallback({
+        leadId,
+        prospectId,
+        phone: sanitizedTo,
+        clientAttemptId,
+        source,
+      })
       // Manual calls need time for a person (or their voicemail) to answer.
       // Keep explicit campaign ring counts and the legacy fallback intact.
       const dialTimeout = parseDialTimeout(
         getFormString(body, ['RingCount', 'ringCount', 'ring_count']),
-        source === 'web_click_to_call' ? 60 : undefined,
+        dialTimeoutFallbackForSource(source),
       )
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -348,40 +447,52 @@ export async function POST(req: Request) {
       return xmlResponse(twiml)
     }
 
-    // ── DIRECT RING: Company numbers ring agent cell (no IVR) ──
-    if (DIRECT_RING_NUMBERS[to]) {
-      const agentPhone = DIRECT_RING_NUMBERS[to]
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
-  </Dial>
-</Response>`
-      return xmlResponse(twiml)
+    // Ernest company DIDs and, when in-app voice is on, +18164292900.
+    // MOBILE_PERSONAL_FORWARD=false omits the personal cell. An unanswered
+    // client goes to voicemail through dial-result and is not sent to PSTN.
+    const ringPlan = inboundRingPlan(to)
+    if (ringPlan.kind === 'direct') {
+      if (!ringPlan.identity && !ringPlan.cell) {
+        console.info('[IVR] Inbound has no client and personal forward is off', { calledNumber: to })
+        return xmlResponse(voicemailRedirect(from, to))
+      }
+      if (ringPlan.personalForwardSuppressed) {
+        console.info('[IVR] Personal cell omitted', { calledNumber: to, identity: ringPlan.identity })
+      }
+      let callerName = ''
+      if (ringPlan.identity) {
+        try {
+          callerName = await lookupInboundCallerName(from)
+        } catch {
+          // The client still rings. CallKit falls through to the PSTN number.
+          console.error('[IVR] Inbound caller name lookup failed')
+        }
+      }
+      return xmlResponse(directInboundTwiml({
+        from,
+        calledNumber: to,
+        identity: ringPlan.identity,
+        cell: ringPlan.cell,
+        callerName,
+      }))
     }
 
     // ── COLD CALL CALLBACK: different IVR — qualify before ringing agents ──
     if (COLD_CALL_NUMBERS.has(to)) {
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="4">
-    <Play>${BASE_URL}/api/audio/ivr-press1.mp3</Play>
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="${COLD_CALLBACK_GATHER_TIMEOUT}">
+    ${sayMenu(COLD_CALLBACK_PROMPT)}
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
       return xmlResponse(twiml)
     }
 
-    // ── STANDARD INBOUND: ElevenLabs Jessica greeting ──
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}" method="POST" timeout="5">
-    <Play>${BASE_URL}/api/audio/ivr-greeting.mp3</Play>
-  </Gather>
-  <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
-</Response>`
-
-    return xmlResponse(twiml)
+    // ── MENU LINES: (816) 429-2900 and every company line not tied to Ernest,
+    // Casey or Gertha (owner 11/07). 15 s ringback, then the Cecily menu with
+    // one retry and press 9. Replaces the Jessica clip and its 5 s silence.
+    return xmlResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber: to, attempt: 1 }))
   } catch (error) {
     console.error('[IVR] Critical error in main handler:', error)
     if (requestKind === 'outbound') {
@@ -396,6 +507,17 @@ export async function POST(req: Request) {
     // must not create a call leg.
     if (requestKind !== 'inbound') {
       return xmlResponse(EMPTY_TWIML)
+    }
+
+    const ringPlan = inboundRingPlan(inboundTo)
+    if (ringPlan.kind === 'direct' && ringPlan.personalForwardSuppressed) {
+      if (!ringPlan.identity) return xmlResponse(voicemailRedirect(inboundFrom, inboundTo))
+      return xmlResponse(directInboundTwiml({
+        from: inboundFrom,
+        calledNumber: inboundTo,
+        identity: ringPlan.identity,
+        cell: null,
+      }))
     }
 
     const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>

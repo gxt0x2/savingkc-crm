@@ -22,6 +22,13 @@ export const GOOGLE_ADS_TWILIO_NUMBER = '+18166088808'
 export const GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER = '+18166086648'
 export const DISPOSITIONS_TWILIO_NUMBER = '+18166088858'
 
+/**
+ * Mojo dialer caller IDs (Mojo > Your Caller IDs, rotation 816-1/2/3). They are
+ * not Twilio numbers: seller callbacks to them forward to the business line, and
+ * Twilio reports the Mojo number as ForwardedFrom.
+ */
+export const MOJO_CALLER_ID_NUMBERS = ['+18165520819', '+18163715792', '+18165520812'] as const
+
 export const TWILIO_NUMBERS = [
   { label: '(816) 307-7835 - Main', value: '+18163077835', purpose: 'main', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 429-2900 - SKC Business', value: '+18164292900', purpose: 'business', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },

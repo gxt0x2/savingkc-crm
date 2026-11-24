@@ -205,11 +205,11 @@ describe('server dialer call eligibility', () => {
     expect(result).toMatchObject({ allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason' })
   })
 
-  it('does not query or enforce SMS-only opt-outs for a CRM voice call', async () => {
+  it('does not enforce SMS-only opt-outs for a CRM voice call', async () => {
     const db = database({
       leads: [goodLead()],
       sms_opt_outs: [{ phone: '+19135550123', reason: 'STOP', is_opted_out: true }],
-    }, ['sms_opt_outs'])
+    })
 
     const result = await evaluateOutboundDialerCall({
       ...baseInput,
@@ -218,7 +218,40 @@ describe('server dialer call eligibility', () => {
     }, { db: db.client })
 
     expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
-    expect(db.client.from).not.toHaveBeenCalledWith('sms_opt_outs')
+    expect(db.client.from).toHaveBeenCalledWith('sms_opt_outs')
+  })
+
+  it('blocks a CRM manual dial when the phone is on the internal DNC list', async () => {
+    const db = database({
+      sms_opt_outs: [{ phone: '+19135550123', reason: 'DNC', is_opted_out: true }],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'mobile_manual',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'do_not_call',
+      reasonSource: 'sms_opt_outs.reason',
+      leadId: null,
+    })
+  })
+
+  it('fails closed when CRM voice DNC status cannot be verified', async () => {
+    const db = database({}, ['sms_opt_outs'])
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'mobile_manual',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: false, reason: 'policy_unavailable' })
   })
 
   it('ignores stale disconnected evidence from a duplicate CRM record', async () => {
@@ -501,5 +534,61 @@ describe('server dialer call eligibility', () => {
     expect(await evaluateOutboundDialerCall(input, { db: db.client })).toMatchObject({
       allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason',
     })
+  })
+})
+
+describe('per-phone voice hold (Item 10)', () => {
+  it('blocks voice for a held phone with a clear reasonSource on CRM and Prospecting', async () => {
+    for (const surface of ['crm', 'prospecting'] as const) {
+      const db = database({
+        leads: [goodLead()],
+        prospect_phones: [{ id: 'pp-held', phone: '+19135550123', prospect_id: 'pros-1', voice_hold: true, voice_hold_reason: 'asked for text only' }],
+      })
+      const result = await evaluateOutboundDialerCall({ ...baseInput, surface, source: 'web_click_to_call' }, { db: db.client })
+      expect(result).toMatchObject({ allowed: false, reason: 'voice_hold', reasonSource: 'prospect_phones.voice_hold' })
+    }
+  })
+
+  it('does not block when voice_hold is false', async () => {
+    const db = database({
+      leads: [goodLead()],
+      prospect_phones: [{ id: 'pp-1', phone: '+19135550123', prospect_id: 'pros-1', voice_hold: false }],
+    })
+    const result = await evaluateOutboundDialerCall({ ...baseInput, surface: 'crm', source: 'web_click_to_call' }, { db: db.client })
+    expect(result).toMatchObject({ allowed: true })
+  })
+
+  it('blocks an expired market row outside Monday-Saturday 09:00-17:00 Chicago', async () => {
+    const db = database({
+      leads: [goodLead({ phone: '+19135550777' })],
+      prospect_phones: [{
+        id: 'linked-phone', phone: '+19135550777', prospect_id: 'source-prospect',
+        phone_connected: null, last_disposition: null, prospects: { lead_id: 'lead-1' },
+      }],
+      source_list_rows: [{ id: 'expired-row', list_type: 'mls_expired', prospect_id: 'source-prospect' }],
+    })
+    const input: OutboundDialerCallInput = {
+      ...baseInput,
+      surface: 'crm',
+      phone: '+19135550777',
+      leadId: null,
+      prospectId: 'source-prospect',
+      prospectPhoneId: 'linked-phone',
+      source: 'web_click_to_call',
+    }
+    const closed = await evaluateOutboundDialerCall({ ...input, now: new Date('2026-11-14T23:30:00Z') }, { db: db.client })
+    expect(closed).toMatchObject({ allowed: false, reason: 'outside_calling_hours', reasonSource: 'market_calling_window' })
+    const open = await evaluateOutboundDialerCall({ ...input, now: new Date('2026-11-14T16:00:00Z') }, { db: db.client })
+    expect(open).toMatchObject({ allowed: true })
+  })
+
+  it('SMS STOP alone still allows CRM voice, and a voice hold never writes an SMS opt-out', async () => {
+    const db = database({
+      leads: [goodLead()],
+      sms_opt_outs: [{ phone: '+19135550123', reason: 'STOP', is_opted_out: true }],
+    })
+    const result = await evaluateOutboundDialerCall({ ...baseInput, surface: 'crm', source: 'web_click_to_call' }, { db: db.client })
+    expect(result).toMatchObject({ allowed: true })
+    expect(db.state.inserts.filter((i) => i.table === 'sms_opt_outs')).toHaveLength(0)
   })
 })

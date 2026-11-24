@@ -9,6 +9,7 @@ const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', 
 const PUBLIC_PAGE_EXACT = new Set([
   '/.well-known/oauth-protected-resource',
   '/.well-known/oauth-authorization-server',
+  '/newsletters',
 ])
 
 // API routes that must remain reachable without a CRM session.
@@ -21,16 +22,25 @@ const PUBLIC_API_EXACT = new Set([
   '/api/webhooks/email/lead-sms',
   // The receiving-only worker validates a separate scoped bearer inside its route.
   '/api/workers/email',
+  // The weekday foreclosure pull authenticates FORECLOSURE_INTAKE_SECRET in the route.
+  '/api/prospecting/foreclosure/intake',
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',
   '/api/leads/ppc',
+  '/api/email/newsletters/signup',
   '/api/leads/ppc/book',
   '/api/leads/ppc/track',
   '/api/ppc/track',
   '/api/google-maps-key',
   // MCP performs its own dedicated bearer-token authorization in the route.
   '/api/mcp',
+  // Line type lookup uses the same CRM MCP bearer inside the route.
+  // Exact path only, so a lookalike cannot inherit that gate.
+  '/api/ops/line-type-lookup',
+  // Caller ID reputation log checks CALLER_ID_LOG_SECRET in the route.
+  // Exact path only, so a lookalike cannot inherit that gate.
+  '/api/ops/caller-id-reputation/log',
   // These fixed-target OAuth bridge routes remove only the unsupported MCP
   // resource indicator before forwarding to the configured Supabase issuer.
   '/api/oauth/authorize',
@@ -49,6 +59,8 @@ const PUBLIC_API_EXACT = new Set([
   '/api/twilio-missed-call',
   '/api/twilio-recording-callback',
   '/api/twilio-call-status',
+  // Inbound Voice <Client> leg progress. The route validates the Twilio signature.
+  '/api/twilio-inbound-client-status',
   // Carrier fallback routes are public Twilio webhooks and validate the
   // provider signature inside their handlers.
   '/api/twilio/fallback/voice',
@@ -83,7 +95,9 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/admin/system-config',
   // Cron routes are exact-listed so a newly added scheduled endpoint cannot
   // inherit service-bearer trust before its handler authorization is reviewed.
+  '/api/cron/backfill-inbound-mms',
   '/api/cron/data-retention',
+  '/api/cron/line-check',
   '/api/cron/google-ads-missed-calls',
   '/api/cron/google-ads-reporting-sync',
   '/api/cron/openai-ads-reporting-sync',
@@ -93,6 +107,9 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/cron/sync-gmail/trigger',
   '/api/cron/sync-mojo-emails',
   '/api/cron/sync-mojo-performance',
+  '/api/cron/sync-mojo-calls',
+  '/api/cron/tax-status-verification',
+  '/api/cron/tracking-health',
   '/api/deals/import-photos',
   '/api/deals/upload',
   // Enrichment is intentionally exact-listed so adding a new route under the
@@ -100,6 +117,10 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // handlers also enforce their own user/admin-or-secret authorization.
   '/api/enrich',
   '/api/enrich/batch',
+  // Source-list import is exact-listed so the box can post a CSV with the
+  // cron secret. The handler checks that secret again. Lookalike routes do
+  // not inherit it.
+  '/api/source-lists/import',
   // Worker routes are exact-listed so a newly added worker cannot inherit
   // service-bearer trust before its handler authorization is reviewed.
   '/api/workers/ppc-conversion-export-alert',
@@ -183,6 +204,17 @@ function isPublicApiRoute(request: NextRequest): boolean {
   return false
 }
 
+// The web timeline loads inbound MMS with the cookie session. The mobile app
+// loads the same URL with the Supabase bearer that mobile route handlers
+// verify. Only this exact read skips the cookie gate, and only when a bearer
+// is present, so the handler can accept either proof. Missing and invalid
+// tokens still stop before the private bucket.
+function isInboundMmsBearerRead(request: NextRequest): boolean {
+  return request.method === 'GET'
+    && request.nextUrl.pathname === '/api/conversations/mms'
+    && Boolean(bearerToken(request.headers.get('authorization')))
+}
+
 function isTrustedBearerRoute(request: NextRequest): boolean {
   const { pathname } = request.nextUrl
 
@@ -217,6 +249,30 @@ function unauthorized() {
     { error: 'Unauthorized' },
     { status: 401, headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
   )
+}
+
+// These pages publish index,follow in their own metadata for Google OAuth
+// branding. A noindex response header would override that meta tag.
+const SEARCH_INDEXABLE_PATHS = new Set(['/product', '/privacy', '/terms'])
+
+const ROBOTS_TXT = 'User-agent: *\nDisallow: /\n'
+
+function withCrawlDirective(response: NextResponse, pathname: string): NextResponse {
+  if (!SEARCH_INDEXABLE_PATHS.has(pathname)) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  }
+  return response
+}
+
+function robotsTxtResponse(): NextResponse {
+  return new NextResponse(ROBOTS_TXT, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'X-Robots-Tag': 'noindex, nofollow',
+    },
+  })
 }
 
 const PAID_LANDING_PATHS = new Set([
@@ -448,6 +504,13 @@ function withPaidLandingCookies(response: NextResponse, cookies: PaidLandingCook
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl
+
+  // Crawlers must read robots.txt without a session. A login redirect makes
+  // Google treat the host as crawl-everything and then report 401s on APIs.
+  if ((request.method === 'GET' || request.method === 'HEAD') && pathname === '/robots.txt') {
+    return robotsTxtResponse()
+  }
+
   let paidLandingCookies: PaidLandingCookie[] = []
 
   if (isPaidLandingPageRequest(request)) {
@@ -455,39 +518,47 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   if (previewWriteBlocked(request.method, pathname)) {
-    return NextResponse.json(
+    return withCrawlDirective(NextResponse.json(
       {
         error: 'Preview is read-only until a staging database is connected.',
         previewReadOnly: true,
       },
       { status: 403 },
-    )
+    ), pathname)
   }
 
   if (hasTestBypass(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
-  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return NextResponse.next()
+  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) {
+    return withCrawlDirective(NextResponse.next(), pathname)
+  }
 
   // Skip auth for public routes
   if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Skip auth for explicitly public API routes and external webhooks
   if (isPublicApiRoute(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Let server-to-server checks through only when they carry a trusted bearer.
   if (isTrustedBearerRoute(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
+  }
+
+  // Verified in the route with requireMobileUser. Anonymous reads stay on the
+  // cookie gate below and still return 401.
+  if (isInboundMmsBearerRead(request)) {
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Skip auth for static files and Next.js internals
   if (isStaticAsset(pathname)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
   // Create Supabase client and refresh session
   let supabaseResponse = NextResponse.next({ request })
@@ -522,13 +593,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // If the signed token has no verified subject, keep the existing deny path.
   if (!hasVerifiedSubject(claimsResult)) {
     if (pathname.startsWith('/api/')) {
-      return withPaidLandingCookies(unauthorized(), paidLandingCookies)
+      return withCrawlDirective(withPaidLandingCookies(unauthorized(), paidLandingCookies), pathname)
     }
 
-    return withPaidLandingCookies(loginRedirect(request), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(loginRedirect(request), paidLandingCookies), pathname)
   }
 
-  return withPaidLandingCookies(supabaseResponse, paidLandingCookies)
+  return withCrawlDirective(withPaidLandingCookies(supabaseResponse, paidLandingCookies), pathname)
 }
 
 export const config = {

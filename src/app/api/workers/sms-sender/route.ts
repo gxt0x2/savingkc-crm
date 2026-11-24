@@ -10,22 +10,11 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
-import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { QUEUED_SMS_CONTRACT } from '@/lib/queued-sms'
 
 const CRON_SECRET = process.env.CRON_SECRET
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const MAX_PER_RUN = 50
-
-interface LeadSmsContext {
-  id: string
-  full_name?: string | null
-  phone?: string | null
-  property_address?: string | null
-}
 
 function isOfficeHours(): boolean {
   const now = new Date()
@@ -82,148 +71,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: queryError.message }, { status: 500 })
     }
 
-    let sent = 0
+    const sent = 0
     let skipped = 0
-    let failed = 0
+    const failed = 0
 
+    // Queued follow-ups, confirmations, and drips are not human 1:1 sends.
+    // Mark them skipped so a later worker change cannot deliver the backlog.
     for (const task of tasks || []) {
       const meta = (task.metadata || {}) as Record<string, unknown>
-
-      // Load lead context for template fallback and phone fallback.
-      let phone: string | null = typeof meta.to === 'string' ? meta.to : null
-      let lead: LeadSmsContext | null = null
-      if (task.lead_id) {
-        const { data: leadData } = await supabase
-          .from('leads')
-          .select('id, full_name, phone, property_address')
-          .eq('id', task.lead_id)
-          .single()
-        lead = leadData
-        phone = phone || leadData?.phone || null
-      }
-
-      if (!phone) {
-        await supabase
-          .from('lead_activities')
-          .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'missing_phone' } })
-          .eq('id', task.id)
-        skipped++
-        continue
-      }
-
-      // Check opt-out. Internal alerts are team operational texts, not seller A2P.
-      const isInternal = meta.is_internal === true || meta.internal_alert === true
-      if (!isInternal) {
-        try {
-          const blockReason = await automatedSmsBlockReason({ phone, leadId: task.lead_id })
-          if (blockReason) {
-            await supabase
-              .from('lead_activities')
-              .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'opted_out', suppression_reason: blockReason } })
-              .eq('id', task.id)
-            skipped++
-            continue
-          }
-        } catch (error) {
-          console.error('[sms-sender] suppression check failed closed:', error)
-          await supabase
-            .from('lead_activities')
-            .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'consent_unverified' } })
-            .eq('id', task.id)
-          skipped++
-          continue
-        }
-      }
-
-      // Prefer the rendered body stored by v2 producers. Template fallback is
-      // only for explicit queued rows that did not persist a rendered message.
-      let smsBody = String(meta.message || meta.body || '')
-      const templateName = meta.template_name as string | undefined
-      if (!smsBody && templateName) {
-        const template = await getTemplate(templateName)
-        if (template && lead) {
-          smsBody = resolveTemplate(template.body, lead)
-          await incrementUsage(templateName)
-        }
-      }
-
-      if (!smsBody.trim()) {
-        await supabase
-          .from('lead_activities')
-          .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'empty_body' } })
-          .eq('id', task.id)
-        skipped++
-        continue
-      }
-
-      const sendFrom = typeof meta.from === 'string' ? meta.from : TWILIO_PHONE
-
-      // Send SMS
-      try {
-        const msg = await safeSendSMS({
-          body: smsBody,
-          from: sendFrom,
-          to: phone,
-        })
-
-        if (!msg.success) {
-          await supabase
-            .from('lead_activities')
-            .update({
-              metadata: {
-                ...meta,
-                status: 'failed',
-                failed_at: new Date().toISOString(),
-                error: msg.error || 'safeSendSMS returned success=false',
-              },
-            })
-            .eq('id', task.id)
-          failed++
-          continue
-        }
-
-        // Mark task as completed
-        await supabase
-          .from('lead_activities')
-          .update({
-            metadata: {
-              ...meta,
-              status: 'completed',
-              completed_at: new Date().toISOString(),
-              message_sid: msg.sid,
-            },
-          })
-          .eq('id', task.id)
-
-        // Log the outbound SMS
-        await supabase.from('lead_activities').insert({
-          lead_id: task.lead_id,
-          activity_type: 'sms',
-          description: smsBody,
-          agent: 'System',
+      console.error('[sms-sender] refused queued SMS', {
+        taskId: task.id,
+        reason: 'automated_sms_disabled',
+      })
+      await supabase
+        .from('lead_activities')
+        .update({
           metadata: {
-            direction: 'outbound',
-            from: sendFrom,
-            to: phone,
-            message_sid: msg.sid,
-            trigger: 'sms_sender_worker',
-            source_task_id: task.id,
-            ...(isInternal ? { is_internal: true } : {}),
+            ...meta,
+            status: 'skipped',
+            skip_reason: 'automated_sms_disabled',
+            skipped_at: new Date().toISOString(),
           },
         })
-
-        sent++
-      } catch (err: unknown) {
-        const errorMessage = getErrorMessage(err)
-        console.error(`SMS send failed for ${phone}:`, errorMessage)
-        await supabase
-          .from('lead_activities')
-          .update({
-            metadata: { ...meta, status: 'failed', error: errorMessage },
-          })
-          .eq('id', task.id)
-        failed++
-      }
+        .eq('id', task.id)
+      skipped++
     }
 
     // Update system_workers

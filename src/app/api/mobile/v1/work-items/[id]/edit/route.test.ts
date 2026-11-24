@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), access: vi.fn(), transition: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), access: vi.fn(), transition: vi.fn(), replay: vi.fn() }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => {
+  const query = { select: () => query, eq: () => query, maybeSingle: mocks.replay }
+  return { from: () => query }
+} }))
 vi.mock('@/lib/mobile-api/mobile-command-access', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/mobile-command-access')>(), requireAuthorizedMobileWorkItem: mocks.actor }))
 vi.mock('@/lib/server/work-items', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/server/work-items')>(), transitionWorkItem: mocks.transition,
@@ -27,11 +31,24 @@ function request(body: Record<string, unknown>) {
 describe('mobile work-item edit', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'))
+    mocks.replay.mockResolvedValue({ data: null, error: null })
     mocks.actor.mockResolvedValue({ actor: { email: 'ernest@savingkc.com', name: 'Ernest' } })
     mocks.transition.mockResolvedValue({
       changed: true,
       workItem: { key: 'activity:event-1', version: 4, title: 'Updated walk' },
     })
+  })
+  afterEach(() => vi.useRealTimers())
+  it('rejects a changed past due date before the canonical transition', async () => {
+    const response = await POST(request({ expectedVersion: 3, title: 'Walk', dueAt: '2000-01-01T10:00:00Z', assignedTo: 'Ernest' }), context)
+    expect(response.status).toBe(400); expect(mocks.transition).not.toHaveBeenCalled()
+  })
+  it('allows an unrelated edit with the unchanged historical due date', async () => {
+    mocks.actor.mockResolvedValue({ actor: { email: 'ernest@savingkc.com', name: 'Ernest' }, dueAt: '2000-01-01T10:00:00.000Z' })
+    const response = await POST(request({ expectedVersion: 3, title: 'Updated historical note', dueAt: '2000-01-01T10:00:00Z', assignedTo: 'Ernest' }), context)
+    expect(response.status).toBe(200); expect(mocks.transition).toHaveBeenCalledOnce()
   })
 
   it('edits through the versioned canonical work-item service', async () => {

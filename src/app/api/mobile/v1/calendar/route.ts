@@ -76,7 +76,10 @@ export async function GET(req: NextRequest) {
           updatedAt: item.updatedAt,
         }
       }),
-      appointments: (appointmentRows ?? []).filter((row) => canReadLead(row.lead_id)).map((row) => mapMobileAppointment(row)),
+      appointments: (appointmentRows ?? []).filter((row) => row.lead_id ? canReadLead(row.lead_id)
+        : (Array.isArray(row.mobile_appointment_calendar_sync)
+            ? row.mobile_appointment_calendar_sync[0]?.owner_email === scopedActor.email
+            : (row.mobile_appointment_calendar_sync as { owner_email?: string } | null)?.owner_email === scopedActor.email)).map((row) => mapMobileAppointment(row)),
       serverNow: new Date().toISOString(),
     }, { headers: mobileNoStoreHeaders() })
   } catch (error) {

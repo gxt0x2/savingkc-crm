@@ -88,7 +88,9 @@ function outcomeFor(row: RecentCallActivityRow, metadata: Record<string, unknown
   return 'no_answer'
 }
 
-export const RECENT_CALL_PROVIDER_ID_FIELDS = ['callSid', 'CallSid', 'call_sid', 'parentCallSid', 'parent_call_sid', 'providerCallSid'] as const
+// dialCallSid is the client/child leg. The app's inbound log carries that SID,
+// so it must join the parent's dial-result row.
+export const RECENT_CALL_PROVIDER_ID_FIELDS = ['callSid', 'CallSid', 'call_sid', 'parentCallSid', 'parent_call_sid', 'providerCallSid', 'dialCallSid'] as const
 
 export function recentCallProviderIds(row: RecentCallActivityRow): string[] {
   const metadata = row.metadata ?? {}
@@ -136,6 +138,10 @@ function evidenceRank(metadata: Record<string, unknown>): number {
   const source = text(metadata, 'source')
   if (source === 'savingkc_mobile') return 3
   if (source === 'outbound_call_policy') return 2
+  // The <Dial> action knows whether the agent leg connected. The parent
+  // status callback logs "completed" even after voicemail, so it never
+  // outranks this row.
+  if (text(metadata, 'dialStatus')) return 2
   if (source === 'twilio_status_callback') return 1
   if (source === 'twilio_recording_callback') return -1
   return 0
@@ -172,8 +178,8 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
     phone,
     direction,
     startedAt: text(metadata, 'startedAt', 'started_at') || row.created_at,
-    durationSeconds: number(metadata, 'duration', 'durationSeconds', 'duration_seconds')
-      || groupedRows.map((candidate) => number(candidate.metadata ?? {}, 'duration', 'durationSeconds', 'duration_seconds')).find((duration) => duration > 0) || 0,
+    durationSeconds: number(metadata, 'duration', 'durationSeconds', 'duration_seconds', 'dialCallDuration')
+      || groupedRows.map((candidate) => number(candidate.metadata ?? {}, 'duration', 'durationSeconds', 'duration_seconds', 'dialCallDuration')).find((duration) => duration > 0) || 0,
     outcome: outcomeFor(row, metadata),
     voicemailReceived: direction === 'inbound' && groupedRows.some((candidate) => candidate.activity_type === 'voicemail'),
     note: text(metadata, 'notes') || row.description?.trim() || null,

@@ -11,6 +11,9 @@ import './crm-mobile-theme.css'
 export const metadata: Metadata = {
   title: 'Savings KC | Acquisitions CRM',
   description: 'SavingKC Real Estate Acquisitions CRM',
+  // CRM HTML stays out of search. /product, /privacy, and /terms replace this
+  // with index,follow for Google OAuth branding.
+  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },

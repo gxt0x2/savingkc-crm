@@ -17,7 +17,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }))
 
-import { createWorkItem, listWorkItems, normalizeWorkItemKind, transitionWorkItem, transitionWorkItemsBulk } from './work-items'
+import { createWorkItem, listWorkItems, normalizeWorkItemKind, requireMobileWorkItemCreateTime, requireMobileWorkItemEditTime, transitionWorkItem, transitionWorkItemsBulk } from './work-items'
 
 const row = {
   work_item_key: 'activity:10000000-0000-0000-0000-000000000001',
@@ -50,6 +50,29 @@ describe('canonical work-item server service', () => {
       error: null,
     }))
     mocks.readRows.mockReturnValue({ data: [row], error: null })
+  })
+
+  it('keeps an exact mobile create replay valid after its due time, but rejects a new/changed past command', async () => {
+    const input = { actor: 'Casey', idempotencyKey: 'date-replay-fixture', leadId: row.lead_id, kind: row.kind, title: row.title, notes: row.description, dueAt: row.due_at, assignedTo: row.assigned_to, department: row.department, role: row.role, primaryNextAction: row.primary_next_action }
+    const now = Date.parse(row.due_at) + 1
+    mocks.replay.mockResolvedValue({ data: { action: 'create', actor: 'Casey', work_item_key: row.work_item_key, next_state: row }, error: null })
+    await expect(requireMobileWorkItemCreateTime(input, undefined, now)).resolves.toBeUndefined()
+    await expect(requireMobileWorkItemCreateTime({ ...input, title: 'Different content' }, undefined, now)).rejects.toMatchObject({ code: 'invalid' })
+    await expect(requireMobileWorkItemCreateTime({ ...input, actor: 'Ernest' }, undefined, now)).rejects.toMatchObject({ code: 'invalid' })
+    mocks.replay.mockResolvedValue({ data: null, error: null })
+    await expect(requireMobileWorkItemCreateTime(input, undefined, now)).rejects.toMatchObject({ code: 'invalid' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('allows an unchanged overdue edit and exact expired-date replay, but rejects another reschedule payload', async () => {
+    const input = { key: row.work_item_key, actor: 'Casey', idempotencyKey: 'date-edit-fixture', expectedVersion: 1, currentDueAt: row.due_at, patch: { title: row.title, notes: row.description, dueAt: row.due_at, assignedTo: row.assigned_to } }
+    const now = Date.parse(row.due_at) + 1
+    await expect(requireMobileWorkItemEditTime(input, undefined, now)).resolves.toBeUndefined()
+    mocks.replay.mockResolvedValue({ data: { action: 'edit', actor: 'Casey', work_item_key: row.work_item_key, previous_state: row, next_state: { ...row, version: 2 } }, error: null })
+    await expect(requireMobileWorkItemEditTime({ ...input, currentDueAt: null }, undefined, now)).resolves.toBeUndefined()
+    await expect(requireMobileWorkItemEditTime({ ...input, currentDueAt: null, patch: { ...input.patch, title: 'Changed retry' } }, undefined, now)).rejects.toMatchObject({ code: 'invalid' })
+    await expect(requireMobileWorkItemEditTime({ ...input, currentDueAt: null, expectedVersion: 2 }, undefined, now)).rejects.toMatchObject({ code: 'invalid' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('normalizes legacy UI labels into the canonical kind vocabulary', () => {

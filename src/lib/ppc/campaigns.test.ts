@@ -38,6 +38,12 @@ describe('ppc campaign registry', () => {
     })
   })
 
+  it('keeps the Search 2026 default for a click with no campaign name', () => {
+    expect(ppcCampaignNameForContext({
+      attribution: { gclid: 'click-without-campaign' },
+    })).toBe('Search 2026')
+  })
+
   it('prefers explicit UTM campaign before page fallback', () => {
     expect(ppcCampaignNameForContext({
       attribution: {

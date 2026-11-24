@@ -49,8 +49,9 @@ export async function POST(req: Request) {
 
   const isColdCall = COLD_CALL_NUMBERS.has(calledNumber)
 
-  // Use recorded greetings where available, text-to-speech as the fallback.
-  const audioGreeting = GREETING_AUDIO[agent]
+  // Recorded agent greetings name the company. Cold callbacks must stay
+  // unbranded, so they always use the text greeting instead of those clips.
+  const audioGreeting = isColdCall ? undefined : GREETING_AUDIO[agent]
   const textGreeting = isColdCall ? COLD_GREETING : (GREETINGS[agent] || DEFAULT_GREETING)
 
   const greetingTag = audioGreeting

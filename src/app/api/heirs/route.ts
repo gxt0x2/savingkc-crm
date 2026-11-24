@@ -26,6 +26,9 @@ interface HeirPhoneRow {
   is_verified_contact?: boolean | null
   verified_at?: string | null
   verified_by?: string | null
+  // Added by 20261130130000_prospect_phone_voice_hold.sql — optional until applied.
+  voice_hold?: boolean | null
+  voice_hold_reason?: string | null
 }
 
 /** Phone digits for comparison — strips formatting and a US country code. */
@@ -175,7 +178,8 @@ export async function GET(req: Request) {
   // hasn't reached this environment yet, retry without them so the heirs list
   // still renders (verified flags just default to false/null) instead of 500ing.
   const BASE_PHONE_COLS = 'id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, created_at'
-  const FULL_PHONE_COLS = `${BASE_PHONE_COLS}, is_verified_contact, verified_at, verified_by`
+  const VERIFY_PHONE_COLS = `${BASE_PHONE_COLS}, is_verified_contact, verified_at, verified_by`
+  const FULL_PHONE_COLS = `${VERIFY_PHONE_COLS}, voice_hold, voice_hold_reason`
   const queryPhones = (cols: string) =>
     supabase
       .from('prospect_phones')
@@ -184,6 +188,9 @@ export async function GET(req: Request) {
       .order('created_at', { ascending: true })
 
   let phRes = await queryPhones(FULL_PHONE_COLS)
+  if (phRes.error && isMissingColumnError(phRes.error)) {
+    phRes = await queryPhones(VERIFY_PHONE_COLS)
+  }
   if (phRes.error && isMissingColumnError(phRes.error)) {
     phRes = await queryPhones(BASE_PHONE_COLS)
   }
@@ -241,6 +248,8 @@ export async function GET(req: Request) {
           is_verified_contact: p.is_verified_contact ?? false,
           verified_at: p.verified_at ?? null,
           verified_by: p.verified_by ?? null,
+          voice_hold: p.voice_hold ?? false,
+          voice_hold_reason: p.voice_hold_reason ?? null,
         })),
       }
     })

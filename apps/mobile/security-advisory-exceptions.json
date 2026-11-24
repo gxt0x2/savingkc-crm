@@ -2,11 +2,25 @@
   "schemaVersion": 1,
   "exceptions": [
     {
-      "advisoryId": "GHSA-86w9-cpqp-85rv",
-      "package": "node-forge",
+      "advisoryId": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
       "owner": "Mobile Platform",
-      "reason": "Unpatched node-forge RSA PKCS#1 v1.5 signature verification advisory (<=1.4.0, no first_patched_version). Pulled transitively via Expo SDK 56 (@expo/cli, expo, expo-updates). No Expo 56 patch yet; forced remediation would leave SDK 56. Temporary until Expo ships a patched node-forge or we move past 56.",
-      "expiresOn": "2026-11-15"
+      "reason": "GHSA-mrhx-c7xc-m3w5 is the Zod $ZodArray issue-accumulation DoS, patched in zod 4.6.6. Expo SDK 56 and @expo/cli still depend on zod ^3.25.76, whose main export is the Zod 3 API. Forcing zod 4 changes that export and breaks the CLI. The root CRM pins zod 4.6.7. Remove this when Expo depends on zod >= 4.6.6.",
+      "expiresOn": "2026-12-15"
+    },
+    {
+      "advisoryId": "GHSA-3g3m-2fjr-6pw4",
+      "package": "@expo/cli",
+      "owner": "Mobile Platform",
+      "reason": "GHSA-3g3m-2fjr-6pw4 is a high-severity advisory reported against @expo/cli 56.1.27, installed transitively by Expo SDK 56 (expo 56.0.24). npm audit's only remediation is expo@58.0.23, a major SDK upgrade (56 -> 58) that needs a full mobile regression pass, visual-locks review and a new TestFlight train, so it is out of scope for a CI-unblock change. Remove this when the mobile app moves to Expo SDK 58 or @expo/cli ships a patched 56.x.",
+      "expiresOn": "2026-12-15"
+    },
+    {
+      "advisoryId": "GHSA-g3hv-75wg-m249",
+      "package": "@expo/cli",
+      "owner": "Mobile Platform",
+      "reason": "GHSA-g3hv-75wg-m249 is a high-severity advisory reported against @expo/cli 56.1.27, installed transitively by Expo SDK 56 (expo 56.0.24). npm audit's only remediation is expo@58.0.23, a major SDK upgrade (56 -> 58) that needs a full mobile regression pass, visual-locks review and a new TestFlight train, so it is out of scope for a CI-unblock change. Remove this when the mobile app moves to Expo SDK 58 or @expo/cli ships a patched 56.x.",
+      "expiresOn": "2026-12-15"
     }
   ]
 }

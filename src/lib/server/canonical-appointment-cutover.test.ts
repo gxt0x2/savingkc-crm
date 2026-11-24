@@ -9,7 +9,7 @@ describe('canonical appointment cutover contract', () => {
   it('keeps public booking atomic, durable, and independent of Manifest', () => {
     const route = source('src/app/api/book/route.ts')
     expect(route).toContain('createCanonicalBooking')
-    expect(route).toContain('buildQueuedSmsMetadata')
+    expect(route).not.toContain('buildQueuedSmsMetadata')
     expect(route).not.toContain('ensureManifestExists')
     expect(route).not.toContain('updateManifestAndCascade')
     expect(route).not.toContain('safeSendSMS')
@@ -23,7 +23,8 @@ describe('canonical appointment cutover contract', () => {
     expect(ppc).not.toContain('updateManifestAndCascade')
     expect(ppc).not.toContain('randomUUID')
     expect(outcome).toContain('resolveAuthenticatedActor')
-    expect(outcome).toContain(".from('appointments')")
+    expect(outcome).toContain('recordAppointmentOutcome')
+    expect(source('src/lib/server/appointment-outcome.ts')).toContain(".from('appointments')")
     expect(outcome).not.toContain('updateManifestV2_1')
     expect(outcome).not.toContain("agent: 'Casey'")
   })

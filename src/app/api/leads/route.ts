@@ -4,12 +4,16 @@ import { regenerateBriefing } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { mergeLeadAttribution, websiteFormAttribution } from '@/lib/attribution/lead-attribution'
+import { linkJourneyToLead, visitorIdFromBody } from '@/lib/ppc/journey-link'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
@@ -293,7 +297,7 @@ async function triggerWebsiteLeadSideEffects(input: {
     },
     callback: input.phone ? {
       leadPhone: input.phone,
-      callerId: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+      callerId: readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835'),
       fullName: input.fullName,
       address: input.address,
       trigger: 'website_form_submit',
@@ -308,6 +312,21 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders })
 }
 
+async function writeLeadAttribution(leadId: string, next: ReturnType<typeof websiteFormAttribution>): Promise<void> {
+  try {
+    const { data, error } = await supabase.from('leads').select('attribution').eq('id', leadId).maybeSingle()
+    if (error) {
+      if (!isMissingColumnError(error)) console.error('[website-lead] attribution read failed:', error)
+      return
+    }
+    const merged = mergeLeadAttribution((data as { attribution?: unknown } | null)?.attribution, next)
+    const { error: updateError } = await supabase.from('leads').update({ attribution: merged }).eq('id', leadId)
+    if (updateError && !isMissingColumnError(updateError)) console.error('[website-lead] attribution write failed:', updateError)
+  } catch (err) {
+    console.error('[website-lead] attribution write threw:', err)
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -317,6 +336,7 @@ export async function POST(req: NextRequest) {
     const email = cleanString(body.email)?.toLowerCase() ?? null
     const formSource = cleanString(body.source) || WEBSITE_LEAD_SOURCE
     const sessionId = cleanSessionId(body.session_id)
+    const visitorId = visitorIdFromBody(body)
     const attribution = cleanAttribution(body.attribution)
     const landingUrl = cleanString(body.landing_url) || cleanString(attribution.landingUrl)
     const referrer = cleanString(body.referrer) || cleanString(attribution.referrer)
@@ -332,6 +352,7 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: corsHeaders },
       )
     }
+    await recordWrittenEmails([email])
 
     let leadId: string | null = null
 
@@ -410,6 +431,16 @@ export async function POST(req: NextRequest) {
 
     const resolvedLeadId = leadId as string
     await removeMergedPartialLead(sessionLead, resolvedLeadId)
+
+    // Standard attribution audit trail (best-effort; never blocks intake).
+    await writeLeadAttribution(resolvedLeadId, websiteFormAttribution({
+      touch: body.touch,
+      legacy: { referrer, landingUrl, sessionId, visitorId, formSource, attribution },
+      userAgent: req.headers.get('user-agent'),
+    }))
+
+    // Tie the visits before this submit (and later return visits) to the lead.
+    await linkJourneyToLead({ leadId: resolvedLeadId, sessionId, visitorId })
 
     const activityId = await upsertWebsiteLeadActivity({
       leadId: resolvedLeadId,

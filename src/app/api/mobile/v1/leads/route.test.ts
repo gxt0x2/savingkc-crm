@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   requireMobileCommandActor: vi.fn(),
   readPage: vi.fn(),
+  admin: vi.fn(),
 }))
 
 vi.mock('@/lib/mobile-api/mobile-command-access', async (importOriginal) => ({
@@ -14,6 +15,7 @@ vi.mock('@/lib/server/contact-directory-read-model', async (importOriginal) => (
   ...await importOriginal<typeof import('@/lib/server/contact-directory-read-model')>(),
   readContactDirectoryPage: mocks.readPage,
 }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
 
 import { GET } from './route'
 
@@ -108,5 +110,28 @@ describe('mobile Pipeline', () => {
     mocks.requireMobileCommandActor.mockResolvedValue({ scopedActor: { email: 'agent@savingkc.com', fullName: '__unassigned', access: 'agent', assignmentAliases: ['__unassigned'] } })
     expect((await GET(request())).status).toBe(403)
     expect(mocks.readPage).not.toHaveBeenCalled()
+  })
+
+  it('attaches an explicit email clear for a stored address with no stop', async () => {
+    mocks.admin.mockReturnValue({
+      from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }),
+    })
+    mocks.readPage.mockResolvedValue({
+      items: [{
+        id: 'lead-1', full_name: 'Ernest Dodson', phone: '+19137179716', email: 'savingkc@gmail.com',
+        source: 'website', address: '123 Main St', city: 'Kansas City', station: 'qualified',
+        classification: 'opportunity', dead_reason: null, owner: 'Ernest', score: 88,
+        is_favorite: false, created_at: '2026-09-01T12:00:00Z', updated_at: '2026-09-17T12:00:00Z',
+        attention_state: 'clear', last_communication_description: null,
+        last_activity_at: '2026-09-17T12:00:00Z', primary_next_action_id: null,
+        primary_next_action_title: null, primary_next_action_due_at: null,
+        primary_next_action_owner: null,
+      }],
+      totalCount: 1, hasMore: false, nextCursor: null, smartListCounts: { qualified: 1 },
+    })
+    const response = await GET(request('?list=qualified'))
+    await expect(response.json()).resolves.toMatchObject({
+      leads: [{ email: 'savingkc@gmail.com', email_opt_out: false, email_suppressed: false, email_consent: 'clear' }],
+    })
   })
 })

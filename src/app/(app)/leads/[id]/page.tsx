@@ -23,6 +23,7 @@ const PropertyHero = dynamic(() => import('@/components/leads/property-hero').th
 const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
 const DocumentManager = dynamic(() => import('@/components/documents/document-manager').then((module) => module.DocumentManager))
 const PropertyDetailsCard = dynamic(() => import('@/components/leads/property-details-card').then((module) => module.PropertyDetailsCard))
+const PathToLeadPanel = dynamic(() => import('@/components/leads/path-to-lead-panel').then((module) => module.PathToLeadPanel))
 const AdsSignalReceipt = dynamic(() => import('@/components/leads/ads-signal-receipt').then((module) => module.AdsSignalReceipt))
 const AddNote = dynamic(() => import('@/components/leads/add-note').then((module) => module.AddNote))
 const EditNoteModal = dynamic(() => import('@/components/leads/edit-note-modal').then((module) => module.EditNoteModal))
@@ -861,6 +862,7 @@ export default function LeadDetailPage() {
           marketing: (
             <div className="grid gap-5 lg:grid-cols-2">
               <AdsSignalReceipt leadId={lead.id} variant="sidebar" />
+              <PathToLeadPanel leadId={lead.id} />
               <MailTracker leadId={lead.id} leadName={lead.full_name ?? undefined} onLogged={refreshAll} />
               <div className="lg:col-span-2">
                 <EmailThread leadId={id} />

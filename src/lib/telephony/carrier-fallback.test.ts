@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildCarrierFallbackSmsLeadSeed,
   buildCarrierVoiceFallbackTwiml,
   carrierFallbackUrls,
   matchesCarrierRoute,
 } from './carrier-fallback'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('carrier fallbacks', () => {
   it('builds stable production fallback URLs', () => {
@@ -24,10 +28,76 @@ describe('carrier fallbacks', () => {
       agentPhone: '+18167564943',
     })
 
+    expect(xml).toContain('<Client><Identity>casey</Identity>')
+    expect(xml).not.toContain('ernest')
     expect(xml).toContain('<Number>+18167564943</Number>')
-    expect(xml).toContain('callerId="+18167277667"')
+    expect(xml).toContain('callerId="+19135550199"')
+    expect(xml).not.toContain('callerId="+18167277667"')
     expect(xml).toContain('type=direct')
     expect(xml).toContain('source=carrier_fallback')
+  })
+
+  it('rings Ernest in the app and on the cell when the company webhook is down', () => {
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+19137179716',
+      calledNumber: '+18166088588',
+      agentPhone: '+18162262552',
+    })
+
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('<Parameter name="callerNumber" value="+19137179716" />')
+    expect(xml).toContain('<Parameter name="callerName" value="" />')
+    expect(xml).toContain('<Parameter name="calledNumber" value="+18166088588" />')
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('callerId="+19137179716"')
+    expect(xml).not.toContain('callerId="+18166088588"')
+    expect(xml).toContain('timeout="15"')
+  })
+
+  it('does not put the personal cell back when personal forward is off', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+18162608357',
+      calledNumber: '+18166088588',
+      agentPhone: '+18162262552',
+    })
+
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('callerId="+18162608357"')
+    expect(xml).not.toContain('<Number>')
+    expect(xml).not.toContain('+18162262552')
+  })
+
+  it('rings both apps and the owner cell for the business line when the IVR cannot run', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+18162608357',
+      calledNumber: '+18164292900',
+      agentPhone: '+18162262552',
+    })
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('<Identity>casey</Identity>')
+    expect(xml).toContain('callerId="+18162608357"')
+  })
+
+  it('puts a CRM name on the Voice client without dropping the cell', () => {
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+19137179716',
+      calledNumber: '+18166088588',
+      agentPhone: '+18162262552',
+      callerName: 'Jane Seller',
+    })
+
+    expect(xml).toContain('<Parameter name="callerName" value="Jane Seller" />')
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('callerId="+19137179716"')
   })
 
   it('creates an unqualified New record rather than assuming a seller lead', () => {

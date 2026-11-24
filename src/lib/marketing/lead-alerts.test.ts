@@ -3,6 +3,7 @@ import {
   alertChannel,
   buildLeadAlertSummary,
   isLeadAlertMetadata,
+  leadAlertDeliveryPhrase,
   normalizeLeadAlertDelivery,
   readLeadAlertCallback,
   resolveLeadAlertCallback,
@@ -26,8 +27,8 @@ describe('marketing lead alert helpers', () => {
         { status: 'fulfilled', value: { to: '+18167564943', success: false, error: 'blocked' } },
       ],
     })).toEqual([
-      { target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
-      { target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: 'fulfilled' },
+      { channel: null, target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
+      { channel: null, target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: 'fulfilled' },
     ])
   })
 
@@ -67,8 +68,8 @@ describe('marketing lead alert helpers', () => {
       {
         recipients: ['Ernest', 'Casey'],
         delivery: [
-          { target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
-          { target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: null },
+          { channel: null, target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
+          { channel: null, target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: null },
         ],
         callback: { started: true, sid: 'CA1', to: '+18162262552', batchId: 'b1', calls: [], error: null },
         callbackResolution: { claimedBy: 'Ernest', claimedAt: '2026-06-04T14:00:00.000Z', outcome: 'connected', outcomeAt: '2026-06-04T14:03:00.000Z', dialStatus: 'completed' },
@@ -99,6 +100,40 @@ describe('marketing lead alert helpers', () => {
       formAlerts: 1,
       callAlerts: 1,
     })
+  })
+
+  it('counts only SMS attempts and labels each delivery channel', () => {
+    const summary = buildLeadAlertSummary([
+      {
+        recipients: ['Ernest'],
+        delivery: [
+          { channel: 'mobile_push', target: 'Ernest', to: null, success: false, sid: null, error: 'Mobile push is not configured', status: 'not_configured' },
+          { channel: 'email', target: 'Ernest', to: 'ernest@savingkc.com', success: true, sid: 'email-1', error: null, status: 'sent' },
+          { channel: 'sms', target: 'Ernest', to: null, success: false, sid: null, error: null, status: 'skipped' },
+        ],
+        callback: null,
+        callbackResolution: { claimedBy: null, claimedAt: null, outcome: null, outcomeAt: null, dialStatus: null },
+        trigger: 'website_lead_alert',
+        trafficSource: null,
+      },
+    ])
+
+    expect(summary.smsSucceeded).toBe(0)
+    expect(summary.smsFailed).toBe(0)
+    expect(leadAlertDeliveryPhrase({
+      channel: 'email',
+      success: true,
+      error: null,
+      status: 'sent',
+    })).toBe('Email ok')
+    expect(leadAlertDeliveryPhrase({
+      channel: 'mobile_push',
+      success: false,
+      error: 'Mobile push is not configured',
+      status: 'not_configured',
+    })).toBe('Mobile push is not configured')
+    expect(leadAlertDeliveryPhrase({ channel: 'sms', success: false, error: null, status: 'skipped' })).toBe('SMS skipped')
+    expect(leadAlertDeliveryPhrase({ channel: null, success: true, error: null, status: null })).toBe('SMS ok')
   })
 
   it('classifies alert channels from trigger names', () => {

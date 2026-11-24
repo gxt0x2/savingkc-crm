@@ -1,0 +1,135 @@
+// Attribution for leads that arrive by phone call or text (schema v1).
+//
+// A call to the business line can be a website visitor, a Google Ads caller, or
+// a seller returning a cold call. Mojo callback numbers forward to the business
+// line, so the dialed number alone cannot tell those apart. This uses, in order:
+//   1. the dialed number, when it is a Google Ads or cold-call callback line
+//   2. the number the call was forwarded from, when it is a known Mojo line
+//   3. whether the caller's number is on a prospect list we hold
+//   4. a website phone click: exactly one site session tapped the public
+//      number in the 10 minutes before the call (G2)
+//   5. the channel assigned to the dialed number in Settings (G7); mail,
+//      sign and referral numbers are checked before the prospect match (G8)
+// When none apply the origin is left unknown. Nothing is guessed.
+
+import { getGoogleAdsPhoneProfile } from '@/lib/call-quality-events'
+import { findTwilioNumber, normalizeTwilioNumber } from '@/lib/twilio-numbers'
+import { nonWebAttribution, type LeadAttribution } from './lead-attribution'
+
+export type InboundChannel = 'call' | 'sms'
+export type InboundEvidence = 'tracking_number' | 'forwarded_from' | 'prospect_phone_match' | 'phone_click_match' | 'number_channel'
+
+/** The one website session that tapped the number just before the call. */
+export type PhoneClickMatch = {
+  sessionId: string
+  visitorId: string | null
+  source: string | null
+  medium: string | null
+  campaign: string | null
+  gclid: string | null
+  landingPage: string | null
+}
+
+export type InboundAttributionInput = {
+  channel: InboundChannel
+  calledNumber?: string | null
+  callSid?: string | null
+  forwardedFrom?: string | null
+  prospectMatched?: boolean
+  /** Mojo caller-ID lines that forward callbacks to the business line. */
+  mojoCallbackNumbers?: readonly string[]
+  phoneClick?: PhoneClickMatch | null
+  numberChannel?: { channel: string; campaign: string | null } | null
+  now?: string
+}
+
+/** Comma, semicolon or line separated list from MOJO_CALLBACK_NUMBERS, normalized to E.164. */
+export function parseMojoCallbackNumbers(raw: string | null | undefined): string[] {
+  return (raw || '')
+    .split(/[,;\n]+/)
+    .map((value) => normalizeTwilioNumber(value))
+    .filter((value): value is string => Boolean(value))
+}
+
+/** Channels whose numbers appear on one kind of piece only. */
+const DEDICATED_NUMBER_CHANNELS = new Set(['direct_mail', 'signs', 'referral'])
+
+export function buildInboundAttribution(input: InboundAttributionInput): LeadAttribution {
+  const called = normalizeTwilioNumber(input.calledNumber)
+  const forwardedFrom = normalizeTwilioNumber(input.forwardedFrom)
+  const purpose = findTwilioNumber(called)?.purpose
+  const mojoNumbers = new Set(input.mojoCallbackNumbers ?? [])
+
+  const base = nonWebAttribution(
+    input.channel === 'sms' ? 'inbound_sms' : 'inbound_call',
+    {
+      phone: {
+        tracking_number: called ?? undefined,
+        call_sid: input.callSid || undefined,
+        // Only kept when the call really came through another line.
+        forwarded_from: forwardedFrom && forwardedFrom !== called ? forwardedFrom : undefined,
+      },
+    },
+    input.now,
+  )
+
+  const withOrigin = (
+    evidence: InboundEvidence,
+    firstTouch: NonNullable<LeadAttribution['first_touch']>,
+    dialer?: LeadAttribution['dialer'],
+  ): LeadAttribution => ({
+    ...base,
+    first_touch: firstTouch,
+    ...(dialer ? { dialer } : {}),
+    derived_from: `inbound:${evidence}`,
+  })
+
+  if (purpose === 'google_ads') {
+    return withOrigin('tracking_number', {
+      source: 'google',
+      medium: 'cpc',
+      campaign: getGoogleAdsPhoneProfile(called).campaign,
+    })
+  }
+  if (purpose === 'cold_call') {
+    return withOrigin('tracking_number', { source: 'cold_call', medium: 'callback' })
+  }
+  if (forwardedFrom && mojoNumbers.has(forwardedFrom)) {
+    return withOrigin('forwarded_from', { source: 'cold_call', medium: 'callback' }, { provider: 'mojo' })
+  }
+  // A number printed only on mail, signs or a referral piece is stronger
+  // evidence than the caller being on a prospect list: mailed sellers are on
+  // those lists too (G8).
+  if (input.numberChannel && DEDICATED_NUMBER_CHANNELS.has(input.numberChannel.channel)) {
+    return withOrigin('number_channel', {
+      source: input.numberChannel.channel,
+      medium: input.channel === 'sms' ? 'sms' : 'phone',
+      campaign: input.numberChannel.campaign || undefined,
+    })
+  }
+  if (input.prospectMatched) {
+    return withOrigin('prospect_phone_match', { source: 'cold_call', medium: 'callback' })
+  }
+  if (input.phoneClick) {
+    const click = input.phoneClick
+    return {
+      ...withOrigin('phone_click_match', {
+        source: click.source || (click.gclid ? 'google' : 'website'),
+        medium: click.medium || (click.gclid ? 'cpc' : 'phone_click'),
+        campaign: click.campaign || undefined,
+        gclid: click.gclid || undefined,
+        landing_page: click.landingPage || undefined,
+      }),
+      site_session_id: click.sessionId,
+      ...(click.visitorId ? { site_visitor_id: click.visitorId } : {}),
+    }
+  }
+  if (input.numberChannel) {
+    return withOrigin('number_channel', {
+      source: input.numberChannel.channel,
+      medium: input.channel === 'sms' ? 'sms' : 'phone',
+      campaign: input.numberChannel.campaign || undefined,
+    })
+  }
+  return { ...base, derived_from: 'inbound:unknown_origin' }
+}

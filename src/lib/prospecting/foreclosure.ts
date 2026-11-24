@@ -83,7 +83,6 @@ const COUNTY_STATE: Record<string, string> = {
   jackson: 'MO',
   clay: 'MO',
   platte: 'MO',
-  cass: 'MO',
   johnson: 'KS',
   wyandotte: 'KS',
   miami: 'KS',
@@ -439,6 +438,7 @@ export function normalizeForeclosureInput(
 
   const county = normalizeCounty(input.county)
   if (!county) return { ok: false, reason: 'County is required.' }
+  if (county === 'cass') return { ok: false, reason: 'Cass County is outside the service area.' }
   const state = inferState(county, input.state)
   if (!state) return { ok: false, reason: 'State is required when the county is outside the first metro set.' }
 

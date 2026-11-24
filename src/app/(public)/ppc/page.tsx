@@ -4,10 +4,11 @@ import { SellLanding } from './SellLanding'
 import { GoogleTagManager } from './GoogleTagManager'
 import { OpenAIAdsPixel } from './OpenAIAdsPixel'
 import { EditOverlay } from './EditOverlay'
+import { trimPhoneConfig } from '@/lib/phone-config'
 import { DEFAULT_PPC_CAMPAIGN } from '@/lib/ppc/campaigns'
 
-const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? DEFAULT_PPC_CAMPAIGN.phoneDisplay
-const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_PHONE_TEL ?? DEFAULT_PPC_CAMPAIGN.phoneTel).replace(/[^+\d]/g, '')
+const PPC_PHONE_DISPLAY = trimPhoneConfig(process.env.NEXT_PUBLIC_PPC_PHONE) || DEFAULT_PPC_CAMPAIGN.phoneDisplay
+const PPC_PHONE_TEL = (trimPhoneConfig(process.env.NEXT_PUBLIC_PPC_PHONE_TEL) || DEFAULT_PPC_CAMPAIGN.phoneTel).replace(/[^+\d]/g, '')
 // Search 2026 objective: finish the step form. Keep booking hidden for now.
 const SHOW_BOOKING_CTA = false
 

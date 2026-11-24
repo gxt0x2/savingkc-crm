@@ -1,7 +1,7 @@
 import type { OAuthConnectionStatus, OAuthHealth } from '@/lib/oauth-health'
 import { missingGoogleScopes } from '@/lib/google-oauth-scopes'
 
-export const GMAIL_STALE_SYNC_MS = 36 * 60 * 60 * 1000
+export const GMAIL_STALE_SYNC_MS = 30 * 60 * 1000
 
 export type GoogleConnectionStatus = OAuthConnectionStatus
 export type GmailAndonStatus = 'healthy' | 'attention' | 'down' | 'not_configured' | 'disconnected'

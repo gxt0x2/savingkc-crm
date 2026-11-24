@@ -27,6 +27,15 @@ describe('master phone system', () => {
     }
   })
 
+  it('documents the business line as Ernest in-app voice without taking his caller ID', () => {
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18164292900')).toMatchObject({
+      owner: 'Ernest',
+      routeType: 'acquisitions_ivr',
+      health: 'healthy',
+    })
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18166088588')?.routeType).toBe('direct_agent')
+  })
+
   it('routes the dispositions and Casey legacy identities directly to their owners', () => {
     expect(PHONE_SYSTEM_ATTENTION).toEqual([])
     expect(PHONE_SYSTEM.find((record) => record.number === '+18166088858')).toMatchObject({
@@ -48,7 +57,7 @@ describe('master phone system', () => {
         workflowId: 'cold-call-callback-flow',
         outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
         inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
+        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input and ends the call. No SMS is sent.',
       })
     }
     for (const number of ['+18166404701', '+18165788107', '+18166536616', '+18164761344']) {

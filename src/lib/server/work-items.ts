@@ -64,6 +64,7 @@ interface WorkItemCreateEventRow {
   actor: string
   work_item_key: string
   next_state: WorkItemRow | null
+  previous_state?: WorkItemRow | null
 }
 
 interface CreateWorkItemInput {
@@ -197,6 +198,48 @@ async function assertWorkItemCreateReplay(input: CreateWorkItemInput, current: W
     || event.work_item_key !== current.key || !workItemCreateReplayMatches(input, mapWorkItem(event.next_state))) {
     throw new WorkItemError('That Idempotency-Key belongs to a different work item.', 'conflict')
   }
+}
+
+function mobileTaskTimeIsFuture(dueAt: string, now: number): boolean {
+  const time = Date.parse(dueAt)
+  return Number.isFinite(time) && time > now && time <= now + 2 * 365 * 86_400_000
+}
+
+async function readTaskDateReplay(key: string, db: SupabaseClient): Promise<WorkItemCreateEventRow | null> {
+  const { data, error } = await db.from('work_item_events')
+    .select('action,actor,work_item_key,previous_state,next_state')
+    .eq('idempotency_key', key.trim()).maybeSingle()
+  if (error) databaseError(error.message)
+  return data as WorkItemCreateEventRow | null
+}
+
+export async function requireMobileWorkItemCreateTime(input: CreateWorkItemInput, db: SupabaseClient = supabaseAdmin(), now = Date.now()): Promise<void> {
+  if (!input.dueAt || mobileTaskTimeIsFuture(input.dueAt, now)) return
+  // Validate before persistence, but reconcile an exact previously committed
+  // command even after its originally valid timestamp has passed.
+  const event = await readTaskDateReplay(input.idempotencyKey, db)
+  if (event?.action === 'create' && event.actor === input.actor.trim() && event.next_state
+    && event.work_item_key === event.next_state.work_item_key
+    && workItemCreateReplayMatches(input, mapWorkItem(event.next_state))) return
+  throw new WorkItemError('Choose a future task due time within two years.', 'invalid')
+}
+
+export async function requireMobileWorkItemEditTime(input: {
+  key: string; actor: string; idempotencyKey: string; expectedVersion: number;
+  currentDueAt: string | null; patch: WorkItemPatch;
+}, db: SupabaseClient = supabaseAdmin(), now = Date.now()): Promise<void> {
+  const dueAt = input.patch.dueAt
+  if (!dueAt || sameOptionalTimestamp(dueAt, input.currentDueAt) || mobileTaskTimeIsFuture(dueAt, now)) return
+  const event = await readTaskDateReplay(input.idempotencyKey, db)
+  const saved = event?.next_state
+  if (event?.action === 'edit' && event.actor === input.actor.trim()
+    && event.work_item_key === normalizeWorkItemKey(input.key)
+    && event.previous_state?.version === input.expectedVersion && saved
+    && sameOptionalTimestamp(saved.due_at, dueAt)
+    && (input.patch.title === undefined || saved.title === input.patch.title.trim())
+    && (input.patch.notes === undefined || saved.description === normalizedOptionalText(input.patch.notes))
+    && (input.patch.assignedTo === undefined || saved.assigned_to === normalizedOptionalText(input.patch.assignedTo))) return
+  throw new WorkItemError('Choose a future task due time within two years.', 'invalid')
 }
 
 function databaseError(message: string): never {

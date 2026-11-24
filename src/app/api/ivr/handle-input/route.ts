@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { formatPhone } from '@/lib/format'
+import { agentDialTwiml, businessMenuTwiml, optOutTwiml } from '@/lib/telephony/business-line-ivr'
+import { handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
@@ -48,8 +51,6 @@ export async function POST(req: Request) {
 
       if (existingLead?.id) {
         leadId = existingLead.id
-        const { error: priorityError } = await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-        if (priorityError) throw priorityError
       } else {
         // Check prospects before creating bare lead
         const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
             prospectMatches[0],
             from,
             isColdCall ? 'cold_call_callback' : 'inbound_ivr',
-            'hot'
+            'warm'
           )
           if (createdId) leadId = createdId
         }
@@ -73,32 +74,38 @@ export async function POST(req: Request) {
             phone: from,
             source,
             station: 'new',
-            priority: 'hot',
+            priority: 'warm',
           }).select('id').single()
           leadId = newLead?.id || ''
         }
       }
 
+      queueInboundLeadAttribution({ leadId, channel: 'call', callerNumber: from, calledNumber, callSid })
+
       await supabase.from('lead_activities').insert({
         lead_id: leadId || null,
         activity_type: 'call',
         description: isColdCall
-          ? `Cold call callback from ${formatPhone(from)} — pressed 1, wants to sell`
-          : `Inbound seller call from ${formatPhone(from)} — pressed 1`,
+          ? `Cold call callback from ${formatPhone(from)} — pressed 1`
+          : `Inbound call from ${formatPhone(from)} — pressed 1`,
         agent: 'System',
         metadata: { direction: 'inbound', from, callSid, source: isColdCall ? 'cold_callback_press_1' : 'ivr_press_1' }
       })
 
     }
 
-    // Sim-ring both agents — first to answer gets connected
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.primary.phone}</Number>
-    <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.secondary.phone}</Number>
-  </Dial>
-</Response>`
+    // Sim-ring both agents (apps and cells) — first to answer gets connected
+    const twiml = agentDialTwiml({
+      baseUrl: BASE_URL,
+      from,
+      calledNumber,
+      companyNumber: routing.primary.companyNumber,
+      leadId,
+      type: 'seller',
+      cells: [routing.primary.phone, routing.secondary.phone],
+      ringApps: !isColdCall,
+      announce: !isColdCall,
+    })
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
@@ -123,28 +130,45 @@ export async function POST(req: Request) {
       })
     }
 
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=non_seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.primary.phone}</Number>
-    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.secondary.phone}</Number>
-  </Dial>
-</Response>`
+    const twiml = agentDialTwiml({
+      baseUrl: BASE_URL,
+      from,
+      calledNumber,
+      companyNumber: routing.primary.companyNumber,
+      leadId: '',
+      type: 'non_seller',
+      cells: [routing.primary.phone, routing.secondary.phone],
+      ringApps: true,
+      announce: true,
+    })
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // Invalid input — cold callbacks go to auto-text, standard IVR replays greeting
-  if (isColdCall) {
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
-</Response>`
-    return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  // PRESS 9 — menu lines: do not call or text this number again (owner 11/07).
+  if (digit === '9' && !isColdCall && from) {
+    try {
+      await handleOptOut(from, 'DNC')
+      await supabase.from('lead_activities').insert({
+        lead_id: null,
+        activity_type: 'call',
+        description: `Caller ${formatPhone(from)} pressed 9: added to do-not-call (calls and texts)`,
+        agent: 'System',
+        metadata: { direction: 'inbound', from, callSid, calledNumber, source: 'ivr_press_9', outcome: 'opt_out' },
+      })
+    } catch (error) {
+      console.error('[IVR/handle-input] press 9 opt-out was not saved', error)
+    }
+    return new NextResponse(optOutTwiml(), { headers: { 'Content-Type': 'text/xml' } })
   }
 
+  // Invalid input — cold callbacks go to auto-text, menu lines get one
+  // shorter retry (never the 15 s ring again)
+  if (!isColdCall) {
+    return new NextResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber, attempt: 2 }), { headers: { 'Content-Type': 'text/xml' } })
+  }
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect method="POST">${BASE_URL}/api/twiml-voice</Redirect>
+  <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
 </Response>`
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   } catch (error) {

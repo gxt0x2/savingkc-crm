@@ -90,7 +90,7 @@ export default async function SystemHealthPage() {
           <div>
             <h2 className="text-base font-black text-[var(--ck-text)]">Google Gmail connection</h2>
             <p className="mt-1 text-xs text-[var(--ck-text-muted)]">
-              Fail-closed grant health for the daily Gmail poll. Dead or missing OAuth is visible here without opening Settings.
+              Fail-closed grant health for the 5-minute Gmail poll. Dead or missing OAuth is visible here without opening Settings.
             </p>
           </div>
           <StatusPill status={snapshot.gmail.status} />
@@ -118,7 +118,7 @@ export default async function SystemHealthPage() {
                   <p className="text-xs text-[var(--ck-text-muted)]">
                     Last sync {formatDate(account.lastSyncAt)}
                     {account.errorCode ? ` · ${account.errorCode}` : ''}
-                    {account.staleSync ? ' · sync older than 36 hours' : ''}
+                    {account.staleSync ? ' · sync older than 30 minutes' : ''}
                     {account.missingScopes.length > 0 ? ` · missing ${account.missingScopes.join(', ')}` : ''}
                   </p>
                 </div>

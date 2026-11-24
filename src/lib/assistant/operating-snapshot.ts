@@ -1,3 +1,4 @@
+import { readMojoCallIngestHealth } from '@/lib/server/mojo-dial-health'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type LeadRow = {
@@ -29,7 +30,7 @@ function countBy(rows: LeadRow[], key: 'source' | 'station' | 'assigned_agent') 
 export async function readOperatingSnapshot(days = 30) {
   const db = supabaseAdmin()
   const since = new Date(Date.now() - Math.max(1, Math.min(days, 365)) * 86_400_000).toISOString()
-  const [leadsResult, activityResult, dealsResult, rolesResult] = await Promise.all([
+  const [leadsResult, activityResult, dealsResult, rolesResult, mojoCallIngest] = await Promise.all([
     db.from('leads')
       .select('id, full_name, property_address, city, source, station, priority, assigned_agent, created_at')
       .eq('is_parked', false)
@@ -46,6 +47,7 @@ export async function readOperatingSnapshot(days = 30) {
       .order('updated_at', { ascending: false })
       .limit(1000),
     db.from('roles').select('name, kpi_targets'),
+    readMojoCallIngestHealth(db),
   ])
 
   if (leadsResult.error) throw new Error(`Lead snapshot unavailable: ${leadsResult.error.message}`)
@@ -96,10 +98,12 @@ export async function readOperatingSnapshot(days = 30) {
       owner: lead.assigned_agent || 'Unassigned',
       createdAt: lead.created_at,
     })),
+    mojoCallIngest,
     availability: {
       activities: activityResult.error ? activityResult.error.message : 'available',
       dispositions: dealsResult.error ? dealsResult.error.message : 'available',
       goals: rolesResult.error ? rolesResult.error.message : 'available',
+      mojoCallIngest: mojoCallIngest.status === 'unknown' ? mojoCallIngest.message : 'available',
     },
   }
 }

@@ -1,10 +1,11 @@
+import { parseAppointmentInstant } from '@/lib/server/appointment-instant'
+import { readAppointmentOutcomeDetails, type AppointmentOutcomeRequest } from '@/lib/server/appointment-outcome-plan'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import {
   MOBILE_APPOINTMENT_OUTCOMES,
   MOBILE_APPOINTMENT_TYPES,
   type CreateMobileAppointmentInput,
   type EditMobileAppointmentPatch,
-  type MobileAppointmentOutcome,
   type RescheduleMobileAppointmentInput,
 } from '@/lib/mobile-api/appointment-contract'
 
@@ -13,11 +14,14 @@ type ParseSuccess<T> = { ok: true; value: T }
 type ParseResult<T> = ParseSuccess<T> | ParseFailure
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const CREATE_KEYS = new Set(['leadId', 'type', 'scheduledAt', 'endsAt', 'title', 'location', 'timeZone', 'assignedTo', 'notes', 'sendReminder'])
+const CREATE_KEYS = new Set(['leadId', 'type', 'scheduledAt', 'endsAt', 'title', 'location', 'timeZone', 'assignedTo', 'notes', 'sendReminder', 'calendarOwnerEmail'])
 const EDIT_KEYS = new Set(['expectedVersion', 'patch'])
 const EDIT_PATCH_KEYS = new Set(['title', 'type', 'location', 'scheduledAt', 'endsAt', 'timeZone', 'notes'])
 const RESCHEDULE_KEYS = new Set(['scheduledAt', 'endsAt', 'timeZone', 'expectedVersion', 'notes'])
-const OUTCOME_KEYS = new Set(['leadId', 'outcome', 'notes', 'expectedVersion'])
+const OUTCOME_KEYS = new Set([
+  'leadId', 'outcome', 'notes', 'expectedVersion', 'completedNextStep', 'followUp',
+  'notInterested', 'deadReason', 'deadReasonNotes', 'replacementAppointment',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -38,8 +42,7 @@ function cleanText(value: unknown, max: number, required = false): string | null
 
 function iso(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
-  const timestamp = Date.parse(value)
-  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+  return parseAppointmentInstant(value)
 }
 
 function validTimeZone(value: unknown): value is string {
@@ -76,13 +79,19 @@ export function buildMobileAppointmentCreate(
   if (!isRecord(input) || !onlyKeys(input, CREATE_KEYS)) {
     return { ok: false, error: 'Unsupported appointment fields.', status: 400 }
   }
-  const leadId = typeof input.leadId === 'string' ? input.leadId.trim() : ''
+  const leadId = typeof input.leadId === 'string' ? input.leadId.trim() || null : null
+  if (input.leadId !== undefined && input.leadId !== null && typeof input.leadId !== 'string') {
+    return { ok: false, error: 'Choose a valid existing contact.', status: 400 }
+  }
+  if (input.calendarOwnerEmail !== undefined && (typeof input.calendarOwnerEmail !== 'string' || !input.calendarOwnerEmail.trim())) {
+    return { ok: false, error: 'Choose your connected calendar.', status: 400 }
+  }
   const title = cleanText(input.title, 200, true)
   const scheduledAt = iso(input.scheduledAt)
   const endsAt = iso(input.endsAt)
   const timeZone = typeof input.timeZone === 'string' ? input.timeZone.trim() : ''
-  if (!UUID.test(leadId) || !title || !scheduledAt || !endsAt || !validTimeZone(timeZone)) {
-    return { ok: false, error: 'Contact, title, times, and a valid time zone are required.', status: 400 }
+  if ((leadId !== null && !UUID.test(leadId)) || !title || !scheduledAt || !endsAt || !validTimeZone(timeZone)) {
+    return { ok: false, error: 'Title, times, and a valid time zone are required; choose an existing contact if linking one.', status: 400 }
   }
   if (!MOBILE_APPOINTMENT_TYPES.includes(input.type as never)) {
     return { ok: false, error: 'Choose a valid appointment type.', status: 400 }
@@ -90,7 +99,7 @@ export function buildMobileAppointmentCreate(
   const timeError = validateWindow(scheduledAt, endsAt, now)
   if (timeError) return { ok: false, error: timeError, status: 400 }
   const location = cleanText(input.location, 500) ?? null
-  if (input.type === 'in_person' && !location) {
+  if (leadId && input.type === 'in_person' && !location) {
     return { ok: false, error: 'In-person appointments require a location.', status: 400 }
   }
   const assignment = resolveTaskAssignee(input.assignedTo, actorName, { defaultToActor: true })
@@ -116,11 +125,12 @@ export function buildMobileAppointmentCreate(
       assignedTo: assignment.assignedTo,
       notes: cleanText(input.notes, 5_000) ?? null,
       sendReminder: false,
+      ...(typeof input.calendarOwnerEmail === 'string' ? { calendarOwnerEmail: input.calendarOwnerEmail.trim().toLowerCase() } : {}),
     },
   }
 }
 
-export function buildMobileAppointmentEdit(input: unknown): ParseResult<{
+export function buildMobileAppointmentEdit(input: unknown, now = Date.now()): ParseResult<{
   expectedVersion: number
   patch: EditMobileAppointmentPatch
 }> {
@@ -146,6 +156,7 @@ export function buildMobileAppointmentEdit(input: unknown): ParseResult<{
   if ('scheduledAt' in input.patch) {
     const value = iso(input.patch.scheduledAt)
     if (!value) return { ok: false, error: 'Choose a valid appointment start time.', status: 400 }
+    if (Date.parse(value) <= now) return { ok: false, error: 'Choose a future appointment.', status: 400 }
     patch.scheduledAt = value
   }
   if ('endsAt' in input.patch) {
@@ -185,26 +196,27 @@ export function buildMobileAppointmentReschedule(input: unknown, now = Date.now(
 }
 
 export function buildMobileAppointmentOutcome(input: unknown): ParseResult<{
-  leadId: string
+  leadId: string | null
   expectedVersion: number
-  payload: { outcome: MobileAppointmentOutcome; notes: string | null }
+  payload: AppointmentOutcomeRequest
 }> {
   if (!isRecord(input) || !onlyKeys(input, OUTCOME_KEYS) || !validVersion(input.expectedVersion)) {
     return { ok: false, error: 'A contact, outcome, and version are required.', status: 400 }
   }
-  const leadId = typeof input.leadId === 'string' ? input.leadId.trim() : ''
-  if (!UUID.test(leadId) || !MOBILE_APPOINTMENT_OUTCOMES.includes(input.outcome as never)) {
+  const details = readAppointmentOutcomeDetails(input)
+  if (!details.ok) return { ok: false, error: details.error, status: details.status }
+  if (details.value.outcome === 'completed' && !details.value.completedNextStep) {
+    return { ok: false, error: 'Say what happened after the appointment.', status: 400 }
+  }
+  if (!MOBILE_APPOINTMENT_OUTCOMES.includes(details.value.outcome)) {
     return { ok: false, error: 'A valid contact and appointment outcome are required.', status: 400 }
   }
   return {
     ok: true,
     value: {
-      leadId,
+      leadId: details.value.leadId,
       expectedVersion: input.expectedVersion,
-      payload: {
-        outcome: input.outcome as MobileAppointmentOutcome,
-        notes: cleanText(input.notes, 5_000) ?? null,
-      },
+      payload: { ...details.value, expectedVersion: input.expectedVersion },
     },
   }
 }

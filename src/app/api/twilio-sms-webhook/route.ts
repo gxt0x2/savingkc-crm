@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+
+export const maxDuration = 60
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { regenerateBriefing } from '@/lib/briefing-regen'
-import { sendPushToAgents } from '@/lib/push-notifications'
-import { sendPushToAgentNames } from '@/lib/push-notifications'
-import { CASEY_COMPANY_NUMBER, getLeadAlertRecipients } from '@/lib/lead-alert-routing'
+import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
 import type { ProspectMatch } from '@/lib/prospect-lookup'
@@ -16,15 +16,23 @@ import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
 import { resolveInboundSmsLead } from '@/lib/server/inbound-sms-lead'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
+import { classifyJunkInboundSms } from '@/lib/sms-junk-filter'
+import { hasExplicitSellingIntent, isBareYesReply } from '@/lib/selling-intent'
+import { loadLatestOutboundSmsBody } from '@/lib/server/latest-outbound-sms'
 import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
   notifyGoogleAdsTeam,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
+import { captureInboundMms, InboundMmsInputError, readTwilioInboundMedia } from '@/lib/server/inbound-mms'
+import {
+  isTeamCompanyLineSender,
+  queueInboundSmsPush,
+  teamInboundSenderName,
+} from '@/lib/server/inbound-sms-thread'
 
-const CASEY_PHONE = normalizePhoneToE164(process.env.CASEY_PHONE) || '+18167564943'
-const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+18162262552'
 const TWILIO_PHONE = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER) || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
@@ -36,14 +44,6 @@ function emptyTwimlResponse(status = 200): NextResponse {
     headers: TWIML_HEADERS,
   })
 }
-
-// Team numbers — never trigger auto-reply flows for these
-const TEAM_NUMBERS = new Set([
-  '+18167564943', // Casey personal
-  '+18167277667', // Casey company
-  '+18166088588', // Ernest company
-  '+18162262552', // Ernest forwarding
-])
 
 type SmsSuppressionReason = 'SPAM' | 'BLOCKED' | 'DNC' | 'WRONG_NUMBER' | string
 
@@ -96,10 +96,11 @@ function isHardBlockedReason(reason: SmsSuppressionReason | null): boolean {
   return reason === 'SPAM' || reason === 'BLOCKED'
 }
 
-function sendInboundSmsPush(to: string, payload: Parameters<typeof sendPushToAgents>[0]) {
-  if (to !== CASEY_COMPANY_NUMBER) return sendPushToAgents(payload)
-  const recipients = getLeadAlertRecipients(new Date(), to)
-  return sendPushToAgentNames(recipients.map((recipient) => recipient.name), payload)
+async function markExplicitSellerHot(leadId: string): Promise<void> {
+  const { error: priorityError } = await supabase.from('leads')
+    .update({ priority: 'hot' })
+    .eq('id', leadId)
+  if (priorityError) throw priorityError
 }
 
 export async function POST(req: Request) {
@@ -118,17 +119,25 @@ export async function POST(req: Request) {
     }
 
     const body = await req.formData()
-    const from = body.get('From') as string
-    const to = body.get('To') as string
-    const messageBody = body.get('Body') as string
-    const messageSid = body.get('MessageSid') as string
+    const from = String(body.get('From') || '')
+    const to = String(body.get('To') || '')
+    const rawBody = body.get('Body')
+    const messageBody = typeof rawBody === 'string' ? rawBody : ''
+    const messageSid = String(body.get('MessageSid') || '')
+    let mediaCount = 0
+    try {
+      mediaCount = readTwilioInboundMedia(body).length
+    } catch (error) {
+      if (error instanceof InboundMmsInputError) return new NextResponse('Missing required fields', { status: 400 })
+      throw error
+    }
     const isGoogleAdsSms = isGoogleAdsPhoneNumber(to || '')
     const alertRecipients = getLeadAlertRecipients(new Date(), to)
     const sendAlertSms = (body: string) => Promise.allSettled(
       alertRecipients.map((recipient) => safeSendSMS({ body, from: TWILIO_PHONE, to: recipient.phone })),
     )
 
-    if (!from || !to || messageBody === null || !messageSid) {
+    if (!from || !to || !messageSid || (!messageBody.trim() && mediaCount === 0)) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
 
@@ -185,20 +194,30 @@ export async function POST(req: Request) {
     const priorNeedsIdentityReview = !priorMessage.data?.lead_id && priorMetadata?.needs_identity_review === true
     // Twilio sends E.164, but older imports can contain formatting and Unicode
     // controls. Explicit ambiguity stays in human review even during recovery.
-    const identity = priorMessage.data?.lead_id || priorNeedsIdentityReview ? null
+    const isTeamMessage = isTeamCompanyLineSender(from)
+    const identity = isTeamMessage || priorMessage.data?.lead_id || priorNeedsIdentityReview ? null
       : await resolveInboundSmsLead(supabase, from, to, receivedAt)
-    const lead = priorMessage.data?.lead_id
+    const lead = isTeamMessage ? null : priorMessage.data?.lead_id
       ? await findLeadById(priorMessage.data.lead_id)
       : identity?.lead ?? null
     const identityNeedsReview = priorNeedsIdentityReview || identity?.kind === 'ambiguous' || identity?.kind === 'unsupported'
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
     const suppressionReason = await smsSuppressionReason(from)
-    const isTeamMessage = TEAM_NUMBERS.has(from)
+
+    let captured: Awaited<ReturnType<typeof captureInboundMms>>
+    try {
+      captured = await captureInboundMms({ form: body, messageSid, priorMetadata })
+    } catch (error) {
+      if (error instanceof InboundMmsInputError) return new NextResponse('Missing required fields', { status: 400 })
+      console.error('[twilio-sms-webhook] inbound MMS store failed:', error instanceof Error ? error.message : 'failed')
+      return emptyTwimlResponse(503)
+    }
+    const messageText = captured.description
 
     // Prospect lookup for unknown senders
     let prospectMatch: ProspectMatch | null = null
-    if (!lead && !identityNeedsReview && !isHardBlockedReason(suppressionReason)) {
+    if (!isTeamMessage && !lead && !identityNeedsReview && !isHardBlockedReason(suppressionReason)) {
       const matches = await lookupProspectByPhone(from)
       prospectMatch = matches.length > 0 ? matches[0] : null
     }
@@ -230,7 +249,8 @@ export async function POST(req: Request) {
       inbound_received_at: receivedAt,
       lead_name: leadName,
       ...identityMetadata,
-      ...(isTeamMessage ? { is_team: true } : {}),
+      ...captured.metadata,
+      ...(isTeamMessage ? { team_sender: true } : {}),
     }
     const claimId = crypto.randomUUID()
     let primaryActivityId = priorMessage.data?.id as string | undefined
@@ -252,12 +272,12 @@ export async function POST(req: Request) {
       // Keep the persisted receipt and lease evidence, while recording an
       // identity first resolved during recovery before claiming this attempt.
       // If completion fails, these markers pin the next retry to review.
-      inboundMetadata = { ...priorMetadata, inbound_received_at: receivedAt, ...identityMetadata }
+      inboundMetadata = { ...priorMetadata, inbound_received_at: receivedAt, ...identityMetadata, ...captured.metadata, ...(isTeamMessage ? { team_sender: true } : {}) }
     } else {
       const { data: insertedActivity, error: activityInsertError } = await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
-        description: messageBody,
+        description: messageText,
         agent: 'system',
         created_at: receivedAt,
         metadata: primaryMetadata,
@@ -292,7 +312,7 @@ export async function POST(req: Request) {
       inbound_processing_started_at: new Date().toISOString(),
       inbound_processing_claim_id: claimId,
     }
-    let claim = supabase.from('lead_activities').update({ metadata: claimedMetadata })
+    let claim = supabase.from('lead_activities').update({ description: messageText, metadata: claimedMetadata })
       .eq('id', primaryActivityId)
       .eq('activity_type', 'sms')
       .eq('metadata->>message_sid', messageSid)
@@ -330,22 +350,16 @@ export async function POST(req: Request) {
 
     // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
     if (isTeamMessage) {
-      // Still notify — team messages shouldn't be silently swallowed
-      const teamMember = from === CASEY_PHONE ? 'Casey' :
-                         from === ERNEST_PHONE ? 'Ernest' :
-                         from === '+18166088588' ? 'Ernest (co)' :
-                         from === '+18167277667' ? 'Casey (co)' : 'Team'
-      const teamAlert = `📩 ${teamMember} texted ${formatPhone(to)}: "${messageBody.slice(0, 100)}"`
+      // No auto-reply and no seller lead. The primary row is the unmatched thread.
+      const teamMember = teamInboundSenderName(from)
+      const teamAlert = `📩 ${teamMember} texted ${formatPhone(to)}: "${messageText.slice(0, 100)}"`
 
-      // Push notification to CRM
-      sendInboundSmsPush(to, {
+      queueInboundSmsPush(to, {
         title: `Team SMS: ${teamMember}`,
-        body: messageBody.slice(0, 80),
-        url: '/conversations',
+        body: messageText.slice(0, 80),
         tag: 'team-sms',
-      }).catch(() => {})
+      }, { leadId: null, from, messageSid })
 
-      // Log to activities so it shows in Conversations
       try {
         await supabase.from('lead_activities').insert({
           lead_id: null,
@@ -353,7 +367,7 @@ export async function POST(req: Request) {
           description: teamAlert,
           agent: 'system',
           metadata: {
-            direction: 'received',
+            direction: 'internal',
             from,
             to,
             message_sid: messageSid,
@@ -365,6 +379,23 @@ export async function POST(req: Request) {
 
       await completeInboundProcessing()
       return emptyTwimlResponse()
+    }
+
+    // ── Junk / bulk vendor blasts from unknown senders ──
+    // Log on the inbound row as not_a_lead and stop: no lead, no agent page,
+    // no auto-reply, and never any opt-out/DNC write.
+    if (!lead && !prospectMatch) {
+      const junk = classifyJunkInboundSms(messageBody)
+      if (junk) {
+        inboundMetadata = {
+          ...(inboundMetadata ?? primaryMetadata),
+          not_a_lead: true,
+          junk_reason: junk.reason,
+          hub_action: 'mark_read',
+        }
+        await completeInboundProcessing()
+        return emptyTwimlResponse()
+      }
     }
 
     if (isGoogleAdsSms) {
@@ -388,7 +419,7 @@ export async function POST(req: Request) {
       }
 
       await notifyGoogleAdsTeam(
-        googleAdsNewTextTeamMessage(from, messageBody, googleAdsLeadId, to),
+        googleAdsNewTextTeamMessage(from, messageText, googleAdsLeadId, to),
         {
           leadId: googleAdsLeadId,
           trigger: 'google_ads_inbound_sms',
@@ -435,14 +466,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── YES reply (from IVR no-input or missed call text-back) ──
-    if (msg === 'YES' || msg === 'YES!' || msg === 'YES PLEASE' || msg === 'Y') {
+    const priorOutbound = isBareYesReply(messageBody)
+      ? await loadLatestOutboundSmsBody({ phone: from, leadId })
+      : null
+    const selling = hasExplicitSellingIntent(messageBody, { priorOutbound })
+
+    // ── YES reply to the sell auto-text ──
+    if (selling.intent && selling.reason === 'reply_yes_to_sell_auto_text') {
       let yesLeadId = leadId
 
-      // Create lead if unknown caller
       if (!yesLeadId) {
         if (prospectMatch) {
-          // Tax delinquent prospect — create enriched lead
           yesLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'hot') || undefined
           if (!yesLeadId) throw new Error('YES reply prospect lead creation failed')
         } else {
@@ -460,10 +494,7 @@ export async function POST(req: Request) {
         await linkInboundActivity(primaryActivityId, yesLeadId, claimId)
         primaryActivityLeadId = yesLeadId
       } else {
-        const { error: priorityError } = await supabase.from('leads')
-          .update({ priority: 'hot' })
-          .eq('id', yesLeadId)
-        if (priorityError) throw priorityError
+        await markExplicitSellerHot(yesLeadId)
       }
 
       // Alert only the agents eligible for the receiving company number and current schedule.
@@ -474,12 +505,12 @@ export async function POST(req: Request) {
       await sendAlertSms(yesAlertBody)
 
       // Push notification
-      sendInboundSmsPush(to, {
+      queueInboundSmsPush(to, {
         title: 'HOT: YES Reply',
         body: `${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.`,
         url: yesLeadId ? `/leads/${yesLeadId}` : '/',
         tag: 'yes-reply',
-      }).catch(() => {})
+      }, { leadId: yesLeadId, from, messageSid })
 
       // Log the alert SMS
       if (yesLeadId) {
@@ -488,7 +519,7 @@ export async function POST(req: Request) {
           activity_type: 'sms',
           description: yesAlertBody,
           agent: 'System',
-          metadata: { direction: 'outbound_alert', to_agents: alertRecipients.map((recipient) => recipient.name), trigger: 'yes_reply_alert' },
+          metadata: { direction: 'outbound_alert', to_agents: alertRecipients.map((recipient) => recipient.name), trigger: 'yes_reply_alert', intent_quote: selling.quote, intent_reason: selling.reason },
         })
       }
 
@@ -529,24 +560,23 @@ export async function POST(req: Request) {
       return emptyTwimlResponse()
     }
 
-    // ── Known lead replies ──
-    if (lead) {
-      const alertBody = `📩 ${leadName} just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
+    // ── Known contact replies. Page only when the text is selling intent. ──
+    if (lead && selling.intent) {
+      if (leadId) await markExplicitSellerHot(leadId)
+      const alertBody = `📩 ${leadName} wants to sell: "${selling.quote.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
 
       const alertResults = await Promise.all(alertRecipients.map(async (recipient) => ({
         recipient,
         result: await safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: recipient.phone }),
       })))
 
-      // Push notification as backup
-      sendInboundSmsPush(to, {
+      queueInboundSmsPush(to, {
         title: 'Lead Texted',
-        body: `${leadName}: "${messageBody.slice(0, 80)}"`,
+        body: `${leadName}: "${messageText.slice(0, 80)}"`,
         url: `/leads/${leadId}`,
         tag: 'lead-sms',
-      }).catch(() => {})
+      }, { leadId, from, messageSid })
 
-      // Log the alert intent and delivery status
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
@@ -556,6 +586,8 @@ export async function POST(req: Request) {
           direction: 'outbound_alert',
           to_agents: alertRecipients.map((recipient) => recipient.name),
           trigger: 'lead_reply_alert',
+          intent_quote: selling.quote,
+          intent_reason: selling.reason,
           delivery_status: alertResults.map(({ recipient, result }) => ({
             agent: recipient.name,
             success: result.success,
@@ -566,22 +598,21 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Unknown number — create/enrich lead, alert agents, create task. No generic seller auto-reply. ──
+    // ── Unknown number — create a Prospects-tab contact. Page only on selling intent. ──
     if (!lead) {
       let newLeadId: string | null = null
+      const priority = selling.intent ? 'hot' : 'warm'
 
       if (prospectMatch) {
-        // Tax delinquent prospect — create enriched lead
-        newLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'warm')
+        newLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', priority)
         if (!newLeadId) throw new Error('Inbound prospect lead creation failed')
       } else {
-        // Generic unknown SMS — create basic lead
         const { data: newLead, error: leadCreateError } = await supabase.from('leads').insert({
           full_name: `SMS Lead ${formatPhone(from) || from}`,
           phone: from,
           source: 'inbound_sms',
           station: 'new',
-          priority: 'warm',
+          priority,
         }).select('id').single()
         if (leadCreateError || !newLead?.id) throw new Error(leadCreateError?.message || 'Inbound lead creation returned no id')
         newLeadId = newLead?.id || null
@@ -589,60 +620,71 @@ export async function POST(req: Request) {
       }
 
       if (newLeadId) {
+        queueInboundLeadAttribution({
+          leadId: newLeadId,
+          channel: 'sms',
+          callerNumber: from,
+          calledNumber: to,
+          prospectMatched: Boolean(prospectMatch),
+        })
+
         // Link the original inbound activity before sending alerts or completing
         // the lease; retry after any error can find the created lead by phone.
         if (!primaryActivityId) throw new Error('Inbound SMS has no persisted activity to link')
         await linkInboundActivity(primaryActivityId, newLeadId, claimId)
         primaryActivityLeadId = newLeadId
 
-        // Alert only eligible recipients for the receiving company number.
-        const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
-        const smsAlert = prospectMatch
-          ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || formatPhone(from)}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
-          : `📩 New text from unknown number ${formatPhone(from)}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
-        await sendAlertSms(smsAlert)
+        if (selling.intent) {
+          const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
+          const smsAlert = prospectMatch
+            ? `🔥 TAX PROSPECT wants to sell. ${prospectMatch.owner_1 || formatPhone(from)}: "${selling.quote.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
+            : `📩 Seller intent from ${formatPhone(from)}: "${selling.quote.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
+          await sendAlertSms(smsAlert)
 
-        // Log the alert
-        await supabase.from('lead_activities').insert({
-          lead_id: newLeadId,
-          activity_type: 'sms',
-          description: smsAlert,
-          agent: 'System',
-          metadata: { direction: 'outbound_alert', to_agents: alertRecipients.map((recipient) => recipient.name), trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert' },
-        })
-
-        // Push notification
-        sendInboundSmsPush(to, {
-          title: prospectMatch ? 'Tax Prospect Texted!' : 'Unknown SMS',
-          body: prospectMatch
-            ? `${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"`
-            : `${formatPhone(from)}: "${messageBody.slice(0, 60)}"`,
-          url: `/leads/${newLeadId}`,
-          tag: prospectMatch ? 'prospect-sms' : 'unknown-sms',
-        }).catch(() => {})
-
-        // Ari briefing event — include prospect metadata
-        try {
-          await supabase.from('ari_briefing_events').insert({
-            event_type: prospectMatch ? 'prospect_inbound_sms' : 'unknown_sms',
-            priority: prospectMatch ? 'critical' : 'medium',
-            title: prospectMatch
-              ? `Tax prospect texted: ${prospectMatch.owner_1 || formatPhone(from)}`
-              : `New text from unknown: ${formatPhone(from)}`,
-            description: prospectMatch
-              ? `Message: "${messageBody.slice(0, 120)}". ${formatProspectAlert(prospectMatch)}`
-              : `Message: "${messageBody.slice(0, 120)}". Lead created, agents notified.`,
+          await supabase.from('lead_activities').insert({
             lead_id: newLeadId,
-            action_url: `/leads/${newLeadId}`,
-            metadata: prospectMatch ? {
-              parcel_id: prospectMatch.parcel_id,
-              county: prospectMatch.county,
-              cumulative_due: prospectMatch.cumulative_due,
-              is_deceased: prospectMatch.is_deceased,
-              property_address: prospectMatch.situs_street || prospectMatch.situs_address,
-            } : undefined,
+            activity_type: 'sms',
+            description: smsAlert,
+            agent: 'System',
+            metadata: {
+              direction: 'outbound_alert',
+              to_agents: alertRecipients.map((recipient) => recipient.name),
+              trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert',
+              intent_quote: selling.quote,
+              intent_reason: selling.reason,
+            },
           })
-        } catch {}
+
+          queueInboundSmsPush(to, {
+            title: prospectMatch ? 'Tax Prospect Texted!' : 'Unknown SMS',
+            body: prospectMatch
+              ? `${prospectMatch.owner_1 || from}: "${selling.quote.slice(0, 60)}"`
+              : `${formatPhone(from)}: "${selling.quote.slice(0, 60)}"`,
+            url: `/leads/${newLeadId}`,
+            tag: prospectMatch ? 'prospect-sms' : 'unknown-sms',
+          }, { leadId: newLeadId, from, messageSid })
+
+          try {
+            await supabase.from('ari_briefing_events').insert({
+              event_type: prospectMatch ? 'prospect_inbound_sms' : 'unknown_sms',
+              priority: 'critical',
+              title: prospectMatch
+                ? `Seller intent from tax prospect: ${prospectMatch.owner_1 || formatPhone(from)}`
+                : `Seller intent from unknown: ${formatPhone(from)}`,
+              description: `Quote: "${selling.quote.slice(0, 120)}".`,
+              lead_id: newLeadId,
+              action_url: `/leads/${newLeadId}`,
+              metadata: prospectMatch ? {
+                parcel_id: prospectMatch.parcel_id,
+                county: prospectMatch.county,
+                cumulative_due: prospectMatch.cumulative_due,
+                is_deceased: prospectMatch.is_deceased,
+                property_address: prospectMatch.situs_street || prospectMatch.situs_address,
+                intent_quote: selling.quote,
+              } : { intent_quote: selling.quote },
+            })
+          } catch {}
+        }
       }
 
       // Generic unknown/prospect texts are human takeover only.

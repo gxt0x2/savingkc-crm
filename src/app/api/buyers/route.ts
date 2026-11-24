@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,7 @@ export async function POST(req: NextRequest) {
     const phone = body.phone ? normalizePhoneToE164(body.phone) : null
     const dbData = buyerToDbRow(body)
     dbData.phone = phone
+    await recordWrittenEmails([typeof dbData.email === 'string' ? dbData.email : null])
 
     const { data: row, error } = await supabaseAdmin()
       .from('buyers')
@@ -172,6 +174,7 @@ export async function PATCH(req: NextRequest) {
     const dbData = buyerToDbRow(fields)
     // Pass through phone directly (already in fields → dbData doesn't map it)
     if (fields.phone !== undefined) dbData.phone = fields.phone
+    await recordWrittenEmails([typeof dbData.email === 'string' ? dbData.email : null])
 
     const { data: row, error } = await supabaseAdmin()
       .from('buyers')

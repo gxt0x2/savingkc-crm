@@ -233,6 +233,7 @@ describe('mobile outbound message command receipts', () => {
     expect(mocks.sendLeadSms).toHaveBeenCalledWith(expect.objectContaining({
       leadId: smsContract.payload.leadId,
       body: smsContract.payload.body,
+      templateId: 'sms.conversation.1to1.v1',
       metadata: expect.objectContaining({ template_id: smsContract.payload.template_id }),
     }))
     expect([...mocks.activities.values()][0]).toMatchObject({ metadata: { template_id: smsContract.payload.template_id } })

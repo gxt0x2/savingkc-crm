@@ -36,7 +36,9 @@ describe('cron proxy bearer allowlist', () => {
   })
 
   it.each([
+    '/api/cron/backfill-inbound-mms',
     '/api/cron/data-retention',
+    '/api/cron/line-check',
     '/api/cron/google-ads-missed-calls',
     '/api/cron/google-ads-reporting-sync',
     '/api/cron/openai-ads-reporting-sync',
@@ -46,12 +48,22 @@ describe('cron proxy bearer allowlist', () => {
     '/api/cron/sync-gmail/trigger',
     '/api/cron/sync-mojo-emails',
     '/api/cron/sync-mojo-performance',
+    '/api/cron/sync-mojo-calls',
+    '/api/cron/tax-status-verification',
+    '/api/cron/tracking-health',
   ])('allows the reviewed server-to-server endpoint %s', async (pathname) => {
     const response = await proxy(bearerRequest(pathname), event)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('does not grant bearer trust to the manual line-check backfill', async () => {
+    const response = await proxy(bearerRequest('/api/phones/line-check'), event)
+
+    expect(response.status).toBe(401)
+    expect(mocks.createServerClient).toHaveBeenCalled()
   })
 
   it('does not grant bearer trust to a newly added cron route', async () => {

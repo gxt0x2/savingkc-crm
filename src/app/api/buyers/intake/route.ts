@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { validateInput, buyerIntakeSchema } from '@/lib/validation-schemas'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 const corsHeaders = {
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest) {
     const data = validation.data
     const phone = normalizePhoneToE164(data.phone)
     const email = data.email.toLowerCase()
+    await recordWrittenEmails([email])
 
     if (!phone) {
       return NextResponse.json(

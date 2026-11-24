@@ -1,0 +1,94 @@
+/**
+ * The calling list locks at 4:00am America/Chicago.
+ * The Matrix file is expected around 1:30am CT. The loader window is 2:30–3:30am CT.
+ *
+ * Vercel cron is UTC, so the route is scheduled at all three of these and
+ * ignores the tick that is outside the local window:
+ * - 07:30 UTC = 2:30am CDT (load) or 1:30am CST (idle)
+ * - 08:30 UTC = 3:30am CDT (deadline) or 2:30am CST (load)
+ * - 09:30 UTC = 4:30am CDT (idle) or 3:30am CST (deadline)
+ */
+
+export interface ChicagoClock {
+  date: string
+  hour: number
+  minute: number
+}
+
+export function chicagoClock(instant: Date): ChicagoClock {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  let hour = Number(read('hour'))
+  if (hour === 24) hour = 0
+  return {
+    date: `${read('year')}-${read('month')}-${read('day')}`,
+    hour,
+    minute: Number(read('minute')),
+  }
+}
+
+export function addIsoDays(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, month - 1, day))
+  utc.setUTCDate(utc.getUTCDate() + days)
+  return utc.toISOString().slice(0, 10)
+}
+
+/** Adds and tags at or after 4:00am CT count on the next calling list. */
+export function additionListDay(instant: Date): string {
+  const clock = chicagoClock(instant)
+  if (clock.hour >= 4) return addIsoDays(clock.date, 1)
+  return clock.date
+}
+
+export type MarketCheckWindow = 'load' | 'deadline' | 'idle'
+
+/** 2:30am inclusive through 3:29am is the load. 3:30am through 3:59am is the miss deadline. */
+export function marketCheckWindow(instant: Date): MarketCheckWindow {
+  const clock = chicagoClock(instant)
+  const minutes = clock.hour * 60 + clock.minute
+  if (minutes >= 150 && minutes < 210) return 'load'
+  if (minutes >= 210 && minutes < 240) return 'deadline'
+  return 'idle'
+}
+
+/** A complete Matrix set can clear today's relist check only before the 4:00am lock. */
+export function beforeListLock(instant: Date): boolean {
+  const clock = chicagoClock(instant)
+  return clock.hour < 4
+}
+
+/**
+ * Expired rows may be exported or dialed only Monday–Saturday 09:00–17:00
+ * America/Chicago. 17:00 is closed. Sunday is closed. An invalid clock fails closed.
+ */
+export function expiredCallingWindowOpen(instant: Date): boolean {
+  if (!Number.isFinite(instant.getTime())) return false
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  if (read('weekday') === 'Sun') return false
+  let hour = Number(read('hour'))
+  if (hour === 24) hour = 0
+  const minutes = hour * 60 + Number(read('minute'))
+  return minutes >= 9 * 60 && minutes < 17 * 60
+}
+
+/** off_market_ok is written only when the file is in before 3:30am CT. */
+export function offMarketAllowed(instant: Date): boolean {
+  const clock = chicagoClock(instant)
+  return clock.hour * 60 + clock.minute < 210
+}

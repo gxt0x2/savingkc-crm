@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   dialerCallBlock,
   evaluateDialerCallPolicy,
+  isInternalVoiceDncReason,
   phoneLookupVariants,
   type DialerActivityPolicyFact,
   type DialerCallBlockReason,
@@ -9,7 +10,10 @@ import {
 } from '@/lib/dialer-call-policy'
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
+import { expiredCallingWindowOpen } from '@/lib/market-check/schedule'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
+import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 import { isDialerCallerIdNumber, TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -71,6 +75,7 @@ type ProspectPhoneRow = {
 
 type ActivityRow = { lead_id: string | null; activity_type: string; metadata: unknown; created_at: string }
 type SuppressionRow = { phone: string | null; reason: string | null }
+type VoiceHoldRow = { id: string; phone: string | null; voice_hold_reason?: string | null }
 type ResolvedActivityPolicyFact = DialerActivityPolicyFact & { leadId: string | null }
 
 const VALID_SOURCES = new Set<OutboundDialerCallSource>([
@@ -288,23 +293,38 @@ async function evaluateOutboundDialerCallUnchecked(
         .maybeSingle()
       : Promise.resolve({ data: null, error: null })
 
-    const [exactLeadResult, exactProspectPhoneResult, matchedLeads, matchedProspectPhones, suppressions] = await Promise.all([
+    const [exactLeadResult, exactProspectPhoneResult, matchedLeads, matchedProspectPhones, suppressions, voiceHolds] = await Promise.all([
       exactLeadPromise,
       exactProspectPhonePromise,
       matchingRows<LeadRow>(db, 'leads', 'id, phone, station, classification, dead_reason', variants),
       matchingRows<ProspectPhoneRow>(db, 'prospect_phones', 'id, phone, prospect_id, phone_connected, last_disposition, prospects(lead_id)', variants),
-      input.surface === 'crm'
-        ? Promise.resolve([] as SuppressionRow[])
-        : (async () => {
-            const { data, error } = await db
-              .from('sms_opt_outs')
-              .select('phone, reason')
-              .in('phone', variants)
-              .eq('is_opted_out', true)
-              .limit(1000)
-            if (error) throw new Error('dialer policy suppression lookup failed')
-            return (data ?? []) as unknown as SuppressionRow[]
-          })(),
+      (async () => {
+        const { data, error } = await db
+          .from('sms_opt_outs')
+          .select('phone, reason')
+          .in('phone', variants)
+          .eq('is_opted_out', true)
+          .limit(1000)
+        if (error) throw new Error('dialer policy suppression lookup failed')
+        const rows = (data ?? []) as unknown as SuppressionRow[]
+        return input.surface === 'crm'
+          ? rows.filter((row) => isInternalVoiceDncReason(row.reason))
+          : rows
+      })(),
+      // Per-phone voice hold set by an agent. Independent of SMS opt-outs:
+      // a hold blocks voice only and never writes or reads SMS STOP state.
+      (async () => {
+        const { data, error } = await db
+          .from('prospect_phones')
+          .select('id, phone, voice_hold_reason')
+          .in('phone', variants)
+          .eq('voice_hold', true)
+          .limit(50)
+        // Column not migrated yet → no holds exist. Any other error fails closed.
+        if (error && isMissingColumnError(error)) return [] as VoiceHoldRow[]
+        if (error) throw new Error('dialer policy voice hold lookup failed')
+        return (data ?? []) as unknown as VoiceHoldRow[]
+      })(),
     ])
 
     if (exactLeadResult.error || exactProspectPhoneResult.error) throw new Error('dialer policy context lookup failed')
@@ -358,6 +378,17 @@ async function evaluateOutboundDialerCallUnchecked(
           reasonSource: 'lead_context',
         })
       }
+    }
+
+    const heldPhone = voiceHolds.find((row) => normalizePhoneToE164(row.phone) === normalizedPhone)
+    if (heldPhone) {
+      return decision(dialerCallBlock('voice_hold', normalizedPhone), {
+        checkedAt,
+        leadId: input.leadId,
+        prospectId: input.prospectId ?? exactProspectPhone?.prospect_id ?? null,
+        prospectPhoneId: input.prospectPhoneId ?? heldPhone.id,
+        reasonSource: 'prospect_phones.voice_hold',
+      })
     }
 
     let leads = uniqueById([
@@ -449,8 +480,8 @@ async function evaluateOutboundDialerCallUnchecked(
       activities: policyActivities,
       companyOwnedNumbers: TWILIO_NUMBERS.map((number) => number.value),
       teamNumbers: [
-        process.env.ERNEST_PHONE || '+18162262552',
-        process.env.CASEY_PHONE || '+18167564943',
+        readPhoneEnv('ERNEST_PHONE', '+18162262552'),
+        readPhoneEnv('CASEY_PHONE', '+18167564943'),
       ],
       callingHoursExempt: input.source === 'form_lead_callback' || input.source === 'google_ads_callback',
     })
@@ -459,6 +490,28 @@ async function evaluateOutboundDialerCallUnchecked(
     const resolvedLeadId = manualSource || input.prospectId
       ? null
       : input.leadId ?? leads[0]?.id ?? prospectPhones.map(linkedLeadId).find(Boolean) ?? null
+    if (policyDecision.allowed && !expiredCallingWindowOpen(input.now ?? new Date())) {
+      const prospectIds = [...new Set([
+        input.prospectId ?? null,
+        ...prospectPhones.map((phone) => phone.prospect_id),
+      ].filter((id): id is string => Boolean(id)))]
+      if (prospectIds.length > 0) {
+        const expiredRows = await db.from('source_list_rows')
+          .select('id')
+          .eq('list_type', 'mls_expired')
+          .in('prospect_id', prospectIds)
+          .limit(1)
+        if (!expiredRows.error && Array.isArray(expiredRows.data) && expiredRows.data.length > 0) {
+          return decision(dialerCallBlock('outside_calling_hours', normalizedPhone), {
+            checkedAt,
+            leadId: resolvedLeadId,
+            prospectId: input.prospectId ?? exactProspectPhone?.prospect_id ?? null,
+            prospectPhoneId: input.prospectPhoneId ?? exactProspectPhone?.id ?? null,
+            reasonSource: 'market_calling_window',
+          })
+        }
+      }
+    }
     return decision(policyDecision, {
       checkedAt,
       leadId: resolvedLeadId,

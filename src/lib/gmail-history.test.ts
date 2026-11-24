@@ -38,6 +38,7 @@ describe('Gmail history ingest', () => {
     const fetchImpl = (async (url: string) => {
       expect(url).toContain('/users/me/history?')
       expect(url).toContain('startHistoryId=100')
+      expect(url).not.toContain('labelId=INBOX')
       expect(url).not.toContain('/modify')
       return {
         ok: true,

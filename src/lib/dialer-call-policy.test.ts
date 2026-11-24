@@ -118,6 +118,11 @@ describe('dialer call policy', () => {
     }))).toMatchObject({ allowed: true })
 
     expect(evaluateDialerCallPolicy(policyInput({
+      surface: 'crm',
+      suppressionReasons: ['DNC'],
+    }))).toMatchObject({ allowed: false, reason: 'do_not_call' })
+
+    expect(evaluateDialerCallPolicy(policyInput({
       surface: 'prospecting',
       suppressionReasons: ['STOP'],
     }))).toMatchObject({ allowed: false, reason: 'do_not_call' })

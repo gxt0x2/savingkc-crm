@@ -25,6 +25,14 @@ export class MobileAttachmentError extends Error {
   constructor(message: string, public readonly status: number) { super(message) }
 }
 
+export function isSupportedMessageAttachmentMime(mimeType: string): boolean {
+  return ALLOWED_MIME_TYPES.has(mimeType.toLowerCase())
+}
+
+export function messageAttachmentExtension(mimeType: string): string | null {
+  return MIME_EXTENSION[mimeType.toLowerCase()] ?? null
+}
+
 export function safeMobileAttachmentFilename(value: string, mimeType: string): string {
   const basename = value.split(/[\\/]/).pop()?.normalize('NFKD') || ''
   const dot = basename.lastIndexOf('.')

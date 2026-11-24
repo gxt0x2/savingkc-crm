@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
   sendPushToAgentNames: vi.fn(),
+  sendMobilePushToAgentNames: vi.fn(),
   lookupProspectByPhone: vi.fn(),
   createEnrichedLeadFromProspect: vi.fn(),
   formatProspectAlert: vi.fn(),
@@ -24,6 +25,10 @@ const mocks = vi.hoisted(() => ({
   resolveGoogleAdsLeadContext: vi.fn(),
   processInboundSmsConsent: vi.fn(),
   recordAppointmentSmsResponse: vi.fn(),
+  queueInboundLeadAttribution: vi.fn(),
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -61,6 +66,10 @@ vi.mock('@/lib/push-notifications', () => ({
   sendPushToAgentNames: mocks.sendPushToAgentNames,
 }))
 
+vi.mock('@/lib/mobile-push', () => ({
+  sendMobilePushToAgentNames: mocks.sendMobilePushToAgentNames,
+}))
+
 vi.mock('@/lib/prospect-lookup', () => ({
   lookupProspectByPhone: mocks.lookupProspectByPhone,
 }))
@@ -88,6 +97,14 @@ vi.mock('@/lib/google-ads-phone', () => ({
 
 vi.mock('@/lib/server/appointment-sms-response', () => ({
   recordAppointmentSmsResponse: mocks.recordAppointmentSmsResponse,
+}))
+
+vi.mock('@/lib/server/inbound-lead-attribution', () => ({
+  queueInboundLeadAttribution: mocks.queueInboundLeadAttribution,
+}))
+
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => mocks.afterRequest(work),
 }))
 
 import { POST } from './route'
@@ -253,6 +270,7 @@ describe('twilio SMS webhook identity continuity', () => {
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
     mocks.sendPushToAgentNames.mockResolvedValue(1)
+    mocks.sendMobilePushToAgentNames.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])
     mocks.createEnrichedLeadFromProspect.mockResolvedValue('lead-created')
     mocks.formatProspectAlert.mockReturnValue('prospect context')
@@ -264,6 +282,9 @@ describe('twilio SMS webhook identity continuity', () => {
         ? { handled: true, appointmentId: 'appointment-1', response: 'confirm' }
         : { handled: false }
     ))
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
     mocks.rpc.mockImplementation(async () => {
       if (phoneLookupError) return { data: null, error: phoneLookupError }
@@ -434,6 +455,49 @@ describe('twilio SMS webhook identity continuity', () => {
     expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(inserts).toHaveLength(0)
+  })
+
+  it('schedules known-lead Web and Expo push with after() so the route can return first', async () => {
+    const queued: Array<() => unknown> = []
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      queued.push(work)
+    })
+    const response = await POST(makeSmsRequest('I am interested in selling', '+19137179716', '+18166088588'))
+    expect(response.status).toBe(200)
+    expect(mocks.sendPushToAgents).not.toHaveBeenCalled()
+    expect(mocks.sendMobilePushToAgentNames).not.toHaveBeenCalled()
+    expect(queued).toHaveLength(1)
+    await queued[0]()
+    expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({ title: 'Lead Texted' }))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], expect.objectContaining({
+      data: expect.objectContaining({ kind: 'inbound_sms', leadId: 'lead-123' }),
+    }))
+  })
+
+  it('schedules unknown-number Web and Expo push with after() so the route can return first', async () => {
+    reviewUnknown = true
+    const queued: Array<() => unknown> = []
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      queued.push(work)
+    })
+    const response = await POST(makeSmsRequest('I want an offer on my property', '+19137179716', '+18166088588'))
+    expect(response.status).toBe(200)
+    expect(mocks.sendPushToAgents).not.toHaveBeenCalled()
+    expect(mocks.sendMobilePushToAgentNames).not.toHaveBeenCalled()
+    expect(queued).toHaveLength(1)
+    await queued[0]()
+    expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({ title: 'Unknown SMS' }))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], expect.objectContaining({
+      title: 'Unknown SMS',
+      data: expect.objectContaining({ kind: 'inbound_sms', leadId: 'lead-created' }),
+    }))
+    expect(mocks.queueInboundLeadAttribution).toHaveBeenCalledWith({
+      leadId: 'lead-created',
+      channel: 'sms',
+      callerNumber: '+19137179716',
+      calledNumber: '+18166088588',
+      prospectMatched: false,
+    })
   })
 
 })

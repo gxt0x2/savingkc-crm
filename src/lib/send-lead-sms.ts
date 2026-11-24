@@ -7,13 +7,16 @@
 
 import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { HUMAN_1TO1_SMS_TEMPLATE_ID, safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 
-const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+function defaultTwilioPhone(): string {
+  return readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
+}
 const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
 
 type SmsActivityRow = {
@@ -31,7 +34,7 @@ export type SendLeadSmsResult =
       deliveryState: 'delivered_and_persisted' | 'delivered_not_persisted'
       warning?: string
     }
-  | { status: 'skipped'; reason: 'opted_out' | 'duplicate' }
+  | { status: 'skipped'; reason: 'opted_out' | 'duplicate' | 'sms_requires_mobile' | 'line_check_unknown' | 'suppressed_lookup_inactive' | 'suppressed_bad_number' | 'line_status_unreachable' }
   | { status: 'failed'; error: string; deliveryState?: 'delivery_unknown' }
 
 export interface SendLeadSmsInput {
@@ -44,6 +47,11 @@ export interface SendLeadSmsInput {
   source?: string
   metadata?: Record<string, unknown>
   statusCallback?: string
+  /**
+   * Set only by a human 1:1 composer. Must be `sms.conversation.1to1.v1`
+   * or the shared sender refuses the message.
+   */
+  templateId?: string
   /** Protected provider request cancellation, checked before Twilio submission. */
   signal?: AbortSignal
   /** Revalidates the dialer operation after provider acceptance and before CRM persistence. */
@@ -126,14 +134,26 @@ export async function resolveSmsFromNumber(
     }
   }
 
-  return DEFAULT_TWILIO_PHONE
+  return defaultTwilioPhone()
 }
 
+export { HUMAN_1TO1_SMS_TEMPLATE_ID }
+
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, signal, beforePersistence } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence } = input
   const body = input.body.trim()
 
-  if (await automatedSmsBlockReason({ phone, leadId: leadId ?? null })) return { status: 'skipped', reason: 'opted_out' }
+  const smsBlock = await automatedSmsBlockReason({ phone, leadId: leadId ?? null })
+  if (
+    smsBlock === 'sms_requires_mobile'
+    || smsBlock === 'line_check_unknown'
+    || smsBlock === 'suppressed_lookup_inactive'
+    || smsBlock === 'suppressed_bad_number'
+    || smsBlock === 'line_status_unreachable'
+  ) {
+    return { status: 'skipped', reason: smsBlock }
+  }
+  if (smsBlock) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
@@ -143,6 +163,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     to: phone,
     senderUse: 'conversation',
     statusCallback,
+    templateId,
     signal,
     beforePostProviderWrite: beforePersistence,
   })

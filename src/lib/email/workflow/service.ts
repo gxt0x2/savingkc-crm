@@ -1,3 +1,4 @@
+import { coldLedgerBlocksDispatch, coldLedgerReviewReasons } from '../../email-validation/cold-send'
 import { suppressionTargets } from '../hygiene/suppression'
 import { contactHygieneReasons } from '../hygiene/guards'
 import 'server-only'
@@ -188,13 +189,14 @@ async function review(
     await tx`select * from em_audience_snapshots where workspace_id=${member.workspace_id} and audience_id=${config.audienceId} order by source_revision desc limit 1`
   check(snapshot, 'RECIPIENT_REVIEW_REQUIRED')
   const rows =
-    await tx`select r.id,r.address_id,r.party_id,r.eligibility,r.evidence_hash,
+    await tx`select r.id,r.address_id,r.party_id,r.eligibility,r.reason_codes,r.evidence_hash,
       a.normalized_address,a.verification_state,a.verification_expires_at,a.restriction_revision,
       p.display_name,p.identity_state,
       exists(select 1 from em_suppressions s where s.workspace_id=r.workspace_id and s.address_id=r.address_id) as suppressed,
       exists(select 1 from em_enrollments e where e.workspace_id=r.workspace_id and (e.address_id=r.address_id or e.party_id=r.party_id) and e.state in ('queued','waiting_reply','held','replied')) as enrolled,
       (select count(*) from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.address_id=r.address_id and pa.relationship in ('confirmed','shared')) as identity_links,
-      exists(select 1 from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.address_id=r.address_id and pa.party_id=r.party_id and pa.relationship='confirmed') as confirmed
+      exists(select 1 from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.address_id=r.address_id and pa.party_id=r.party_id and pa.relationship='confirmed') as confirmed,
+      (select jsonb_build_object('emailStatus', v.email_status, 'checkedAt', v.checked_at, 'isRole', v.is_role) from email_address_validations v where v.normalized_email=lower(a.normalized_address)) as email_ledger
     from em_snapshot_rows r join em_addresses a on a.id=r.address_id and a.workspace_id=r.workspace_id
     left join em_parties p on p.id=r.party_id and p.workspace_id=r.workspace_id
     where r.workspace_id=${member.workspace_id} and r.snapshot_id=${snapshot.id} order by r.id`
@@ -203,6 +205,7 @@ async function review(
   const recipients = []
   for (const r of rows) {
     const reasons: string[] = []
+    reasons.push(...coldLedgerReviewReasons(r.email_ledger, now, r.reason_codes))
     if (r.suppressed) reasons.push('Marketing stopped')
     if (r.enrolled)
       reasons.push('Already in an active conversation or campaign')
@@ -1002,7 +1005,7 @@ export async function simulateDelivery(
         const [restriction] =
           await tx`select id from em_suppressions where workspace_id=${ws} and address_id=${intent.address_id} limit 1`
         const [address] =
-          await tx`select normalized_address,verification_state,verification_expires_at from em_addresses where workspace_id=${ws} and id=${intent.address_id}`
+          await tx`select a.normalized_address,a.verification_state,a.verification_expires_at,(select jsonb_build_object('emailStatus', v.email_status, 'checkedAt', v.checked_at, 'isRole', v.is_role) from email_address_validations v where v.normalized_email=lower(a.normalized_address)) as email_ledger from em_addresses a where a.workspace_id=${ws} and a.id=${intent.address_id}`
         const [responsible] =
           await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
         const controllerActive =
@@ -1015,7 +1018,7 @@ export async function simulateDelivery(
           intent.expected_content_revision !== intent.content_revision ||
           intent.expected_controller_revision !== intent.controller_revision
         if (
-          restriction || hygiene.length > 0 ||
+          restriction || coldLedgerBlocksDispatch(address?.email_ledger, now) || hygiene.length > 0 ||
           intent.thread_state === 'stopped' ||
           stale ||
           (intent.origin === 'sequence' && intent.controller !== 'none')

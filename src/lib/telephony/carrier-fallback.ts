@@ -1,4 +1,11 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import {
+  directInboundClientNoun,
+  ERNEST_BUSINESS_DID,
+  inboundClientDialCallerId,
+  inboundRingPlan,
+  ivrAgentClientNouns,
+} from '@/lib/telephony/direct-inbound-ring'
 
 export const VOICE_FALLBACK_PATH = '/api/twilio/fallback/voice'
 export const SMS_FALLBACK_PATH = '/api/twilio/fallback/sms'
@@ -42,6 +49,7 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   from: string
   calledNumber: string
   agentPhone: string
+  callerName?: string | null
 }): string {
   const baseUrl = (input.baseUrl || crmBaseUrl()).replace(/\/$/, '')
   const from = normalizePhoneToE164(input.from) || input.from
@@ -49,11 +57,31 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   const agentPhone = normalizePhoneToE164(input.agentPhone) || input.agentPhone
   const action = `${baseUrl}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}&type=direct`
   const recordingCallback = `${baseUrl}/api/twilio-recording-callback?source=carrier_fallback&from=${encodeURIComponent(from)}&calledNumber=${encodeURIComponent(calledNumber)}`
+  const plan = inboundRingPlan(calledNumber)
+  // The business line's IVR cannot run here, so ring the apps it would have
+  // rung after press 1, plus the owner's cell.
+  const businessLine = calledNumber === ERNEST_BUSINESS_DID
+  const callerContext = { callerNumber: from, callerName: input.callerName ?? '', calledNumber }
+  const clientNoun = businessLine
+    ? ivrAgentClientNouns(calledNumber, callerContext)
+    : directInboundClientNoun(calledNumber, plan.identity ? callerContext : undefined)
+  const ringsClient = Boolean(clientNoun)
+  // Direct company DIDs obey the personal-forward flag. A suppressed cell is
+  // not put back on this fallback. Every other line keeps the owning agent.
+  const cell = plan.kind === 'direct' && plan.personalForwardSuppressed ? null : agentPhone
+  const callerId = inboundClientDialCallerId({ from, calledNumber, ringsClient })
+  if (!clientNoun && !cell) {
+    const voicemail = `${baseUrl}/api/ivr/voicemail?agent=Ernest&from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}`
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${xmlEscape(voicemail)}</Redirect>
+</Response>`
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(calledNumber)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
-    <Number>${xmlEscape(agentPhone)}</Number>
+  <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(callerId)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
+    ${clientNoun}${cell ? `<Number>${xmlEscape(cell)}</Number>` : ''}
   </Dial>
 </Response>`
 }

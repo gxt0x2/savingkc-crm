@@ -17,6 +17,7 @@
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
     "test:performance": "playwright test tests/e2e/navigation-performance.spec.ts",
     "mojo:sync": "node scripts/mojo-cron-runner.mjs sync",
+    "mojo:calls:backfill": "tsx scripts/mojo-call-backfill.mts",
     "mojo:eod": "node scripts/mojo-cron-runner.mjs eod",
     "mojo:session": "node scripts/mojo-extract-session.mjs",
     "mojo:session:manual": "node scripts/mojo-extract-session.mjs --manual",
@@ -64,7 +65,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/inter": "^5.3.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.100.0",
     "@tanstack/react-query": "^5.95.2",
@@ -78,7 +79,7 @@
     "gpt-tokenizer": "^3.4.0",
     "leaflet": "^1.9.4",
     "mcp-handler": "^1.1.0",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "parse5": "8.0.1",
     "pdfjs-dist": "^4.10.38",
     "postgres": "^3.4.8",
@@ -87,15 +88,15 @@
     "recharts": "^3.8.0",
     "resend": "^6.12.4",
     "server-only": "^0.0.1",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "streamdown": "^2.6.0",
     "tailwind-merge": "^3.5.0",
     "twilio": "^5.13.1",
     "web-push": "^3.6.7",
-    "zod": "^3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -107,19 +108,24 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.3",
     "fast-check": "^4.8.0",
+    "fast-glob": "file:tooling/next-root-glob",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
-    "vitest": "^4.1.11",
-    "fast-glob": "file:tooling/next-root-glob"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "brace-expansion@>=4": "5.0.12",
     "postcss": "8.5.24",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "body-parser": "2.4.0",
+    "follow-redirects": "1.16.2",
+    "undici": "7.30.1",
+    "vite": "8.3.5",
     "@next/eslint-plugin-next": {
       "fast-glob": "$fast-glob"
     }

@@ -44,6 +44,14 @@ describe('mobile appointment calendar owner retry', () => {
     expect(mocks.sync).toHaveBeenCalledWith({ appointmentId: id, actorEmail: 'ernest@savingkc.com', expectedVersion: 3, requireOwner: true })
   })
 
+  it('accepts an explicit null contact for an actor-owned standalone retry', async () => {
+    mocks.actor.mockResolvedValue({ actor: { email: 'ernest@savingkc.com', name: 'Ernest' }, leadId: null })
+    mocks.get.mockResolvedValue({ id, leadId: null, version: 3, sync: { provider: 'synced' } })
+    const res = await POST(request({ leadId: null, expectedVersion: 3 }), params)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ appointment: { leadId: null } })
+    expect(mocks.sync).toHaveBeenCalledWith({ appointmentId: id, actorEmail: 'ernest@savingkc.com', expectedVersion: 3, requireOwner: true })
+  })
   it('rejects wrong-contact input before provider work', async () => {
     const res = await POST(request({ leadId: 'other', expectedVersion: 3 }), params)
     expect(res.status).toBe(400)

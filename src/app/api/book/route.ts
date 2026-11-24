@@ -4,8 +4,9 @@ import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
+import { mergeLeadAttribution, websiteFormAttribution } from '@/lib/attribution/lead-attribution'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
-import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
+import { cleanJourneyId, linkJourneyToLead, visitorIdFromBody } from '@/lib/ppc/journey-link'
 import {
   CanonicalBookingError,
   createCanonicalBooking,
@@ -104,6 +105,38 @@ async function refreshAddressSnapshot(leadId: string, address: string, body: Rec
   if (error) throw new Error('Property location refresh is pending')
 }
 
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function shortText(value: unknown, max = 500): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null
+}
+
+/** Booking attribution: the same lead_attribution_v1 record website forms write. */
+async function writeBookingAttribution(leadId: string, body: Record<string, unknown>, sessionId: string | null, visitorId: string | null, bookingSource: string, userAgent: string | null) {
+  const attribution = record(body.attribution)
+  const params = record(attribution.params)
+  const hasJourney = sessionId || visitorId || Object.keys(attribution).length || Object.keys(record(body.touch)).length
+  if (!hasJourney) return
+  const next = websiteFormAttribution({
+    touch: body.touch,
+    legacy: {
+      referrer: shortText(body.referrer) ?? shortText(attribution.referrer),
+      landingUrl: shortText(body.landing_url) ?? shortText(attribution.landingUrl),
+      sessionId, visitorId,
+      formSource: `scheduler-${bookingSource}`,
+      attribution: { ...params, ...attribution },
+    },
+    userAgent,
+  })
+  const { data, error } = await supabase.from('leads').select('attribution').eq('id', leadId).maybeSingle()
+  if (error) throw new Error('Booking attribution read failed')
+  const merged = mergeLeadAttribution((data as { attribution?: unknown } | null)?.attribution, next)
+  const { error: updateError } = await supabase.from('leads').update({ attribution: merged }).eq('id', leadId)
+  if (updateError) throw new Error('Booking attribution write failed')
+}
+
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>
   try {
@@ -119,6 +152,8 @@ export async function POST(req: NextRequest) {
   const slotTime = typeof body.slot_time === 'string' ? body.slot_time : ''
   const slotDateTime = typeof body.slot_datetime === 'string' ? body.slot_datetime : ''
   const source = typeof body.source === 'string' ? body.source : 'website_form'
+  const sessionId = cleanJourneyId(body.session_id)
+  const visitorId = visitorIdFromBody(body)
 
   if (body.website) {
     return NextResponse.json({ success: true, message: 'Booking confirmed!' }, { headers: corsHeaders })
@@ -167,6 +202,14 @@ export async function POST(req: NextRequest) {
       warnings.push('Property location enrichment is pending.')
     })
 
+    await writeBookingAttribution(leadId, body, sessionId, visitorId, bookingSource, req.headers.get('user-agent')).catch((error) => {
+      console.error('[book] attribution write failed:', error)
+      warnings.push('Marketing attribution is pending.')
+    })
+    // Tie the visits that led to this booking to the lead before the
+    // conversion lookup below reads them.
+    await linkJourneyToLead({ leadId, sessionId, visitorId })
+
     const lifecycle = await checkAutoAdvance(leadId, 'appointment_set').catch((error) => {
       console.error('[book] lifecycle advance failed:', error)
       warnings.push('The lifecycle stage refresh is pending.')
@@ -198,22 +241,10 @@ export async function POST(req: NextRequest) {
       activityId = activity?.id ?? null
       if (activityError) warnings.push('The appointment timeline entry is pending.')
 
-      const confirmationBody = `Hi ${firstName}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${formatPhone(phone)}. Questions? Call (816) 429-2900.`
-      const { error: queueError } = await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'sms',
-        description: 'SMS appointment confirmation queued',
-        agent: 'System',
-        metadata: buildQueuedSmsMetadata({
-          to: phone, from: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
-          body: confirmationBody, source: 'public_booking_confirmation',
-          template: 'public_booking_confirmation',
-          extra: { appointment_id: booking.appointmentId, booking_id: booking.bookingId },
-        }),
-      })
-      if (queueError) warnings.push('The confirmation text is pending; do not book again.')
-
-      if (isPpcBooking) {
+      // Every booking is offered to the conversion queue. The loader only
+      // accepts leads with real paid evidence (PPC source, or an ad click on
+      // the linked journey), so organic bookings are skipped there.
+      {
         ppcConversion = await queuePpcAppointmentBookedConversion({
           leadId, appointmentId: booking.appointmentId, bookingId: booking.bookingId,
           activityId, scheduledAt: slotDateTime, scheduledTime: slotTime,
@@ -229,7 +260,7 @@ export async function POST(req: NextRequest) {
         leadId,
         smsBody: `New call booked: ${firstName}${propertyAddress ? ` at ${propertyAddress}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${formatPhone(phone)}`,
         trigger: 'booking_alert', source: bookingSource,
-        trafficSource: isPpcBooking ? 'google_ads' : 'non_paid',
+        trafficSource: isPpcBooking || ppcConversion?.queued ? 'google_ads' : 'non_paid',
         push: {
           title: 'New Booking', body: `${firstName} booked for ${formattedDate} at ${displayTime}`,
           url: `/leads/${leadId}`, tag: `booking-${booking.bookingId}`,

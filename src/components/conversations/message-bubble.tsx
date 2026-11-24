@@ -7,6 +7,7 @@ import { getAgentProfile } from '@/lib/agent-profiles'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
 import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
+import type { ConversationMmsView } from '@/lib/inbound-mms-view'
 import type { CallReviewWorkflow } from '@/lib/marketing/call-recordings'
 
 export type MessageType = 'sms' | 'email' | 'call' | 'note' | 'task' | 'status'
@@ -34,6 +35,7 @@ export interface Message {
   fromPhone?: string
   toPhone?: string
   routingTeam?: string
+  attachments?: ConversationMmsView[]
   // internal timeline event fields
   owner?: string
   dueAt?: string
@@ -104,6 +106,16 @@ function SmsBubble({ message }: { message: Message }) {
             )}
           >
             {message.content}
+            {message.attachments?.length ? (
+              <div className="mt-2 grid gap-2">
+                {message.attachments.map((attachment) => attachment.contentType.startsWith('image/') ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- authenticated MMS bytes are streamed by the CRM and are not optimizer assets.
+                  <img key={attachment.src} src={attachment.src} alt={attachment.label} className="max-h-64 w-full rounded-lg object-contain" />
+                ) : (
+                  <a key={attachment.src} href={attachment.src} className="text-xs font-bold underline">{attachment.label}</a>
+                ))}
+              </div>
+            ) : null}
           </div>
           <span
             className={cn(

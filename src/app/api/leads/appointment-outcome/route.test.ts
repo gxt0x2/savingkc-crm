@@ -3,17 +3,30 @@ import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
-  from: vi.fn(),
-  checkAutoAdvance: vi.fn(),
+  recordAppointmentOutcome: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({
   resolveAuthenticatedActor: mocks.resolveAuthenticatedActor,
 }))
-vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
-vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.checkAutoAdvance }))
+vi.mock('@/lib/server/appointment-outcome', () => ({
+  recordAppointmentOutcome: mocks.recordAppointmentOutcome,
+  AppointmentOutcomeError: class AppointmentOutcomeError extends Error {
+    status: number
+    code: string
+    constructor(message: string, status: number, code: string) {
+      super(message)
+      this.status = status
+      this.code = code
+    }
+  },
+}))
 
+import { AppointmentOutcomeError } from '@/lib/server/appointment-outcome'
 import { POST } from './route'
+
+const leadId = '11111111-1111-4111-8111-111111111111'
+const appointmentId = '22222222-2222-4222-8222-222222222222'
 
 function request(body: unknown) {
   return new NextRequest('https://crm.savingkc.com/api/leads/appointment-outcome', {
@@ -23,71 +36,74 @@ function request(body: unknown) {
   })
 }
 
-function loadAppointment() {
-  const chain: Record<string, unknown> = {}
-  for (const method of ['select', 'eq', 'in', 'order', 'limit']) chain[method] = vi.fn(() => chain)
-  chain.maybeSingle = vi.fn(async () => ({
-    data: { id: '22222222-2222-4222-8222-222222222222', notes: null, scheduled_at: '2026-10-01T15:30:00Z', status: 'scheduled' },
-    error: null,
-  }))
-  return chain
-}
-
-function updateAppointment() {
-  const result = { error: null }
-  const chain: Record<string, unknown> = {
-    update: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
-    then: (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result)),
-  }
-  return chain
-}
-
 describe('canonical appointment outcome route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey Davis' })
-    mocks.checkAutoAdvance.mockResolvedValue({ advanced: true, from: 'appointment_set', to: 'qualified' })
+    mocks.recordAppointmentOutcome.mockResolvedValue({
+      success: true,
+      appointmentId,
+      outcome: 'completed',
+      stage: { from: 'appointment_set', to: 'qualified', changed: true, exception: true },
+      appointmentDate: null,
+      followUpTaskKey: null,
+      replacementAppointmentId: null,
+    })
   })
 
-  it('rejects an unsigned user before parsing or touching appointment data', async () => {
+  it('rejects an unsigned user before parsing or recording an outcome', async () => {
     mocks.resolveAuthenticatedActor.mockResolvedValue(null)
     const req = { json: vi.fn(() => { throw new Error('must not parse') }) } as unknown as NextRequest
     const response = await POST(req)
     expect(response.status).toBe(401)
     expect(req.json).not.toHaveBeenCalled()
-    expect(mocks.from).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentOutcome).not.toHaveBeenCalled()
   })
 
-  it('updates the canonical appointment and attributes evidence to the verified actor', async () => {
-    const update = updateAppointment()
-    const insert = vi.fn().mockResolvedValue({ error: null })
-    let appointmentCalls = 0
-    mocks.from.mockImplementation((table: string) => {
-      if (table === 'appointments') return appointmentCalls++ === 0 ? loadAppointment() : update
-      if (table === 'lead_activities') return { insert }
-      throw new Error(`Unexpected table ${table}`)
-    })
-
+  it('records the outcome as the signed-in actor', async () => {
     const response = await POST(request({
-      leadId: '11111111-1111-4111-8111-111111111111',
-      appointmentId: '22222222-2222-4222-8222-222222222222',
+      leadId,
+      appointmentId,
       outcome: 'completed',
+      completedNextStep: 'offer_presented',
       notes: 'Seller attended',
       actor: 'Ernest',
     }))
     expect(response.status).toBe(200)
-    expect(update.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }))
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      agent: 'Casey Davis',
-      metadata: expect.objectContaining({ actor_email: 'casey@savingkc.com' }),
+    expect(mocks.recordAppointmentOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { email: 'casey@savingkc.com', name: 'Casey Davis' },
+      source: 'appointment_outcome_review',
+      request: expect.objectContaining({
+        leadId,
+        appointmentId,
+        outcome: 'completed',
+        completedNextStep: 'offer_presented',
+        notes: 'Seller attended',
+      }),
     }))
-    expect(mocks.checkAutoAdvance).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'appointment_completed')
+    await expect(response.json()).resolves.toMatchObject({ success: true, outcome: 'completed' })
   })
 
-  it('rejects fabricated identifiers before database access', async () => {
+  it('rejects fabricated identifiers before recording an outcome', async () => {
     const response = await POST(request({ leadId: 'not-a-uuid', outcome: 'completed' }))
     expect(response.status).toBe(400)
-    expect(mocks.from).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentOutcome).not.toHaveBeenCalled()
+  })
+
+  it('returns the stage failure instead of success', async () => {
+    mocks.recordAppointmentOutcome.mockRejectedValue(new AppointmentOutcomeError(
+      'The lead stage could not be moved. The outcome was not completed.',
+      500,
+      'stage_failed',
+    ))
+    const response = await POST(request({
+      leadId,
+      appointmentId,
+      outcome: 'no_show',
+    }))
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body.success).toBeUndefined()
+    expect(body.error).toMatch(/stage could not be moved/)
   })
 })

@@ -18,18 +18,24 @@ interface InboundSmsConsentInput extends SmsConsentAuditInput {
 }
 
 const OPT_OUT_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been unsubscribed from Saving KC messages. Reply START to re-subscribe.</Message></Response>'
+// Acknowledge without a <Message>: the number is already unsubscribed and has
+// had its confirmation, so a repeat STOP must not trigger a second text.
+const SILENT_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 const OPT_IN_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message></Response>'
 
 /** Apply carrier consent commands before any normal inbound-message processing. */
 export async function processInboundSmsConsent(input: InboundSmsConsentInput): Promise<string | null> {
   const optOut = classifySmsOptOut(input.keyword)
   if (optOut) {
+    // If we cannot tell, send the confirmation: the first STOP must always
+    // be acknowledged, a duplicate is the lesser problem.
+    const alreadyOptedOut = await isOptedOut(input.from).catch(() => false)
     await persistSmsOptOutWithAudit({
       ...input,
       keyword: optOut.reason,
       inboundExcerpt: optOut.reason === 'NATURAL_LANGUAGE_OPT_OUT' ? input.keyword.trim().slice(0, 180) : null,
     })
-    return OPT_OUT_TWIML
+    return alreadyOptedOut ? SILENT_TWIML : OPT_OUT_TWIML
   }
   if (isStartKeyword(input.keyword) || (
     input.allowYesOptIn === true &&

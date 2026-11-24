@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { phoneLookupVariants } from '@/lib/dialer-call-policy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import {
@@ -424,6 +425,7 @@ export async function importForeclosureCsv(actor: AuthenticatedActor, csv: strin
   if (parsed.accepted.length === 0 && parsed.rejected.length === 0) {
     throw new ForeclosureError('empty_csv', 400, 'The CSV has no data rows. Use the pilot header row.')
   }
+  await recordWrittenEmails(parsed.accepted.map((record) => record.email))
   let imported = 0
   for (const record of parsed.accepted) {
     await upsertImported(actor, await placeCoordinates(record))

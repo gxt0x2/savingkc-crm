@@ -4,10 +4,11 @@ import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { startPpcFormLeadAgentCallback } from '@/lib/lead-form-callback'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { buildUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 import { DEFAULT_PPC_CAMPAIGN, ppcCampaignForPagePath } from '@/lib/ppc/campaigns'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { linkJourneyToLead } from '@/lib/ppc/journey-link'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
   buildPpcLeadCacheUpdates,
@@ -20,12 +21,10 @@ import {
   SITUATION_TO_TAG,
   TIMELINE_TO_URGENCY,
 } from '@/lib/ppc/tracking-events'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
-import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
-import { sendPushToAgents } from '@/lib/push-notifications'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
@@ -375,71 +374,32 @@ async function triggerPpcLeadSideEffects(params: {
   const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
   const addressPart = params.address ? ` at ${params.address}` : ''
   const alertBody = `New PPC lead: ${params.fullName}${addressPart}. Phone: ${formatPhone(params.phone)}. ${publicLeadUrl}`
-  const targets = getLeadAlertRecipients()
-
-  const smsResults = process.env.TWILIO_PHONE_NUMBER && targets.length > 0
-    ? await Promise.allSettled(
-      targets.map((target) =>
-        safeSendSMS({
-          body: alertBody,
-          from: process.env.TWILIO_PHONE_NUMBER!,
-          to: target.phone,
-        }).then((result) => ({ target: target.name, result })),
-      ),
-    )
-    : []
 
   await Promise.allSettled([
     notifyNewLead(params.leadId, params.fullName, PPC_SOURCE),
-    sendPushToAgents({
-      title: 'New PPC lead',
-      body: `${params.fullName}${addressPart}`,
-      url: leadUrl,
-      tag: `ppc-lead-${params.leadId}`,
-    }),
     regenerateBriefing(params.leadId, 'ppc_lead_submitted', true),
   ])
 
   const campaign = ppcCampaignForPagePath(params.pagePath) ?? DEFAULT_PPC_CAMPAIGN
-  const callback = await startPpcFormLeadAgentCallback({
+  await sendTeamLeadAlert({
     leadId: params.leadId,
-    leadPhone: params.phone,
-    callerId: campaign.phoneTel,
-    fullName: params.fullName,
-    address: params.address,
-    city: params.city,
-    trigger: 'ppc_form_submit',
-  })
-
-  await supabase.from('lead_activities').insert({
-    lead_id: params.leadId,
-    activity_type: 'sms',
-    description: alertBody,
-    agent: 'System',
-    metadata: {
-      direction: 'outbound_alert',
-      to_agents: targets.map((target) => target.name),
-      to_agent_phones: targets.map((target) => target.phone),
-      alert_schedule: targets.map((target) => ({
-        name: target.name,
-        schedule: target.schedule,
-      })),
-      trigger: 'ppc_lead_alert',
-      form_agent_callback: callback,
-      delivery_status: smsResults.map((entry) => {
-        if (entry.status === 'rejected') {
-          return {
-            success: false,
-            error: entry.reason instanceof Error ? entry.reason.message : String(entry.reason ?? 'Unknown error'),
-          }
-        }
-        return {
-          target: entry.value.target,
-          success: entry.value.result.success,
-          sid: entry.value.result.sid,
-          error: entry.value.result.error,
-        }
-      }),
+    smsBody: alertBody,
+    trigger: 'ppc_lead_alert',
+    source: params.pagePath,
+    trafficSource: 'google_ads',
+    push: {
+      title: 'New PPC lead',
+      body: `${params.fullName}${addressPart}`,
+      url: leadUrl,
+      tag: `ppc-lead-${params.leadId}`,
+    },
+    callback: {
+      leadPhone: params.phone,
+      callerId: campaign.phoneTel,
+      fullName: params.fullName,
+      address: params.address,
+      city: params.city,
+      trigger: 'ppc_form_submit',
     },
   })
 }
@@ -589,6 +549,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await recordWrittenEmails([email])
     // Dedupe by phone -> email -> address (in that order)
     let leadId = await findExistingPpcLeadId({ phone: phoneE164, email, address })
 
@@ -873,6 +834,9 @@ export async function POST(req: NextRequest) {
       // while surfacing the failure for repair or deterministic replay.
       console.error('[ppc/lead] seller intake workflow failed', err)
     }
+
+    // Tie this visitor's earlier and later journey events to the lead.
+    await linkJourneyToLead({ leadId: resolvedLeadId, sessionId: parsed.sessionId, visitorId: parsed.visitorId })
 
     if (!isTestLead && !externalSideEffectsDisabled()) {
       const conversionEventId = `lead:${resolvedLeadId}:lead_submitted`

@@ -13,6 +13,8 @@ describe('canonical prospect promotion', () => {
     expect(prospectPromotion).toContain('parcel_id: match.parcel_id || null')
     expect(prospectPromotion).toContain("activity_type: 'status_change'")
     expect(prospectPromotion).toContain("source: 'prospect_promotion'")
+    expect(prospectPromotion).toContain('not classified as a lead')
+    expect(prospectPromotion).not.toContain('Prospect promoted to a lead')
     expect(prospectPromotion).toContain('delinquent_years_category: match.delinquent_years_category')
     expect(prospectPromotion).toContain('is_deceased: match.is_deceased')
   })

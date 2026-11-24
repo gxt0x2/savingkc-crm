@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url);
 const plugin = dirname(require.resolve('@next/eslint-plugin-next/package.json'));
-assert.equal(require(join(plugin, 'package.json')).version, '16.3.8', 'Reverify Next consumer before upgrading');
+assert.equal(require(join(plugin, 'package.json')).version, '16.4.3', 'Reverify Next consumer before upgrading');
 const consumer = join(plugin, 'dist/utils/get-root-dirs.js');
 assert.equal(createHash('sha256').update(readFileSync(consumer)).digest('hex'), '886677432990a735e5ebdfb345ff1cbd40e264f9947a8432eeeb254b3a926bde', 'Next glob consumer changed: review adapter API');
 function scripts(dir) {

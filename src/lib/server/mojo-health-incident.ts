@@ -7,6 +7,8 @@ import { mojoRecoveryDecision, type MojoRecoveryRun, type MojoRecoveryIncident }
 import { sendMojoIngestionFailureSmsAlert } from '@/lib/server/operational-sms-alerts'
 
 type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from' | 'rpc'>
+/** How long a definitely-failed escalation waits before it may be re-sent. */
+export const ESCALATION_RETRY_MINUTES = 60
 export type MojoIncidentInput = {
   message: string; reason: string; source: string
   sessionStatus?: string | null; syncHealth?: string | null; lastSyncAt?: string | null
@@ -63,30 +65,45 @@ export async function recordMojoHealthIncident(db: SupabaseLike, input: MojoInci
   if (!snapshot.decision.escalate) return { created: false, alerted: false }
 
   // A database compare-and-set gives all producers one escalation per unresolved episode.
-  const { data: claim, error: claimError } = await db.from('mojo_recovery_incidents')
-    .update({ alert_claimed_at: now.toISOString(), sms_status: 'claimed' })
+  const claimPatch = { alert_claimed_at: now.toISOString(), sms_status: 'claimed' }
+  const firstClaim = await db.from('mojo_recovery_incidents').update(claimPatch)
     .eq('id', incident.id).eq('status', 'open').is('alert_claimed_at', null).select('id').maybeSingle()
-  if (claimError) throw new Error(`Mojo escalation claim failed: ${claimError.message}`)
+  if (firstClaim.error) throw new Error(`Mojo escalation claim failed: ${firstClaim.error.message}`)
+  let claim = firstClaim.data
+  if (!claim) {
+    // A 'failed' send is a definite non-delivery, so the episode may be escalated again once the
+    // backoff has elapsed. 'unknown' stays ambiguous and is never resent. The patch clears both
+    // predicates, so this stays self-invalidating and concurrent producers still send at most once.
+    const retryBefore = new Date(now.getTime() - ESCALATION_RETRY_MINUTES * 60_000).toISOString()
+    const retryClaim = await db.from('mojo_recovery_incidents').update(claimPatch)
+      .eq('id', incident.id).eq('status', 'open').eq('sms_status', 'failed')
+      .lt('alert_claimed_at', retryBefore).select('id').maybeSingle()
+    if (retryClaim.error) throw new Error(`Mojo escalation retry claim failed: ${retryClaim.error.message}`)
+    claim = retryClaim.data
+  }
   if (!claim) return { created: false, alerted: false }
   const message = `${snapshot.decision.message} ${snapshot.decision.action}`
-  const event = {
-    event_type: 'system_failure', priority: 'critical', title: 'System failure: Mojo ingestion',
-    description: message, read: false, dismissed: false,
-    metadata: { system: 'mojo_ingestion', incident_id: incident.id, reason: alert.failureKey,
-      source: input.source, recovery_run_id: snapshot.run?.id ?? null },
+  // A resend reuses the episode's existing warning; one unresolved episode keeps one warning.
+  if (!incident.briefing_event_id) {
+    const event = {
+      event_type: 'system_failure', priority: 'critical', title: 'System failure: Mojo ingestion',
+      description: message, read: false, dismissed: false,
+      metadata: { system: 'mojo_ingestion', incident_id: incident.id, reason: alert.failureKey,
+        source: input.source, recovery_run_id: snapshot.run?.id ?? null },
+    }
+    let { data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(event).select('id').single()
+    if (insertError && /ari_briefing_events\.metadata|metadata.*column|column.*metadata/i.test(insertError.message)) {
+      const legacy = { event_type: event.event_type, priority: event.priority, title: event.title,
+        description: event.description, read: false, dismissed: false }
+      ;({ data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(legacy).select('id').single())
+    }
+    if (insertError) {
+      await db.from('mojo_recovery_incidents').update({ alert_claimed_at: null, sms_status: 'failed' }).eq('id', incident.id)
+      throw new Error(`Mojo incident insert failed: ${insertError.message}`)
+    }
+    const linked = await db.from('mojo_recovery_incidents').update({ briefing_event_id: briefing?.id ?? null }).eq('id', incident.id)
+    if (linked.error) throw new Error(`Mojo warning link failed: ${linked.error.message}`)
   }
-  let { data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(event).select('id').single()
-  if (insertError && /ari_briefing_events\.metadata|metadata.*column|column.*metadata/i.test(insertError.message)) {
-    const legacy = { event_type: event.event_type, priority: event.priority, title: event.title,
-      description: event.description, read: false, dismissed: false }
-    ;({ data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(legacy).select('id').single())
-  }
-  if (insertError) {
-    await db.from('mojo_recovery_incidents').update({ alert_claimed_at: null, sms_status: 'failed' }).eq('id', incident.id)
-    throw new Error(`Mojo incident insert failed: ${insertError.message}`)
-  }
-  const linked = await db.from('mojo_recovery_incidents').update({ briefing_event_id: briefing?.id ?? null }).eq('id', incident.id)
-  if (linked.error) throw new Error(`Mojo warning link failed: ${linked.error.message}`)
   try {
     const result = await sendMojoIngestionFailureSmsAlert({ incidentId: incident.id, message, source: input.source })
     const sent = Boolean(result.result?.success)

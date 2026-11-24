@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { ProspectImportError, parseProspectImportRows } from '@/lib/server/prospect-import-command'
 
 export async function POST(request: NextRequest) {
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid import request' }, { status: 400 })
   }
 
+  await recordWrittenEmails(rows.map((row) => row.email))
   const db = supabaseAdmin()
   const phones = rows.map((row) => row.phone)
   const phoneChunks = Array.from({ length: Math.ceil(phones.length / 100) }, (_, index) =>

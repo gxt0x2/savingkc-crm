@@ -11,6 +11,7 @@ import type { ConversationHubActivity, ConversationHubThread } from '@/lib/opera
 import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
 import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
 import { DEFAULT_CONTACT_SMART_LIST, DEFAULT_CONTACT_SORT } from '@/lib/contact-smart-lists'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import type { DealStage } from '@/types/pipeline'
 
 /**
@@ -218,6 +219,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Add a name, phone number, or email address.' }, { status: 400 })
   }
 
+  await recordWrittenEmails([email])
   const db = supabaseAdmin()
   const { data, error } = await db
     .from('leads')

@@ -7,6 +7,11 @@ const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['pdfjs-dist'],
+  outputFileTracingIncludes: {
+    '/api/admin/market-check': ['./data/mls-seeds/**/*'],
+    '/api/cron/market-check': ['./data/mls-seeds/**/*'],
+    '/api/source-lists/dialer-export': ['./data/mls-seeds/**/*'],
+  },
   async redirects() {
     return [
       {

@@ -201,6 +201,7 @@ describe('workspace navigation', () => {
     expect(within(marketingNav).getByRole('link', { name: /Overview/ })).toHaveAttribute('href', '/reports/marketing')
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('aria-current', 'page')
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
+    expect(within(marketingNav).getByRole('link', { name: /Website conversion/ })).toHaveAttribute('href', '/marketing/website-conversion')
   })
 
   it('does not expose the retired Dialer dashboard as Prospecting navigation', () => {

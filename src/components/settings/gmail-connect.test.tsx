@@ -76,17 +76,17 @@ describe('GmailConnect honesty', () => {
     expect(screen.queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument()
   })
 
-  it('warns when last_sync_at is older than 36 hours instead of implying live sync', async () => {
+  it('warns when last_sync_at is older than 30 minutes instead of implying live sync', async () => {
     fetchMock.mockResolvedValue(statusResponse({
       oauthConfigured: true,
       accounts: [account({
-        last_sync_at: new Date(Date.now() - 40 * 60 * 60 * 1000).toISOString(),
+        last_sync_at: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
       })],
     }))
 
     render(<GmailConnect userEmail="ernest@savingkc.com" />)
 
-    await waitFor(() => expect(screen.getByText(/Last sync is more than 36 hours old/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Last sync is more than 30 minutes old/)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Sync now' })).toBeInTheDocument()
   })
 

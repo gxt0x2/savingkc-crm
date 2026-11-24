@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PAID_TRAFFIC_SOURCES } from '@/lib/ppc/tracking-events'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { buildPpcReport } from '@/lib/marketing/ppc-report'
 import { getPpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest) {
     db
       .from('ppc_tracking_events')
       .select('id, event_id, event_name, event_category, event_time, session_id, visitor_id, lead_id, page_location, page_referrer, traffic_source, campaign, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, gad_source, gad_campaignid, gad_adgroupid, form_step, form_status, situation_raw, timeline_raw, condition_raw, phone_number, sms_consent, is_test, payload, created_at')
+      .in('traffic_source', [...PAID_TRAFFIC_SOURCES])
       .gte('event_time', sinceIso)
       .order('event_time', { ascending: false })
       .limit(5000),

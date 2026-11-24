@@ -110,4 +110,34 @@ describe('mobile recent call projection', () => {
     ], 1, { include: (item) => item.inboundRoute !== 'cold_callback' })
     expect(items.map((item) => item.id)).toEqual(['eligible'])
   })
+
+  // Ernest's 11/06 7:20 PM test: answered on the phone, shown as a missed call.
+  it('shows an answered company-line call as answered, not missed', () => {
+    const parent = 'CA' + 'a'.repeat(32)
+    const child = 'CA' + 'b'.repeat(32)
+    const live = row('dial-result', { type: 'direct', callSid: parent, dialCallSid: child, direction: 'inbound', outcome: 'connected', dialStatus: 'completed', dialCallDuration: 72, from: '+19137179716' }, '2026-11-07T01:21:06Z')
+    const parentStatus = row('status', { callSid: parent, direction: 'inbound', callStatus: 'completed', duration: 75, from: '+19137179716' }, '2026-11-07T01:21:08Z')
+    // Before the duration row lands, the connected row alone is still answered with its duration.
+    const early = buildMobileRecentCalls([live])[0]
+    expect(early.outcome).toBe('answered')
+    expect(early.durationSeconds).toBe(72)
+    const settled = buildMobileRecentCalls([live, parentStatus])
+    expect(settled).toHaveLength(1)
+    expect(settled[0].outcome).toBe('answered')
+    // The app's inbound wrap-up carries the client-leg SID and joins the same call.
+    const app = row('app', { source: 'savingkc_mobile', direction: 'inbound', callSid: child, outcome: 'answered', duration: 70, from: '+19137179716', notes: 'Seller wants a callback' }, '2026-11-07T01:25:18Z')
+    const joined = buildMobileRecentCalls([live, parentStatus, app])
+    expect(joined).toHaveLength(1)
+    expect(joined[0]).toMatchObject({ direction: 'inbound', outcome: 'answered', note: 'Seller wants a callback' })
+  })
+
+  it('keeps a missed company-line call missed even though the parent call completed', () => {
+    const parent = 'CA' + 'c'.repeat(32)
+    const items = buildMobileRecentCalls([
+      row('missed', { type: 'direct', callSid: parent, direction: 'inbound', outcome: 'missed', dialStatus: 'busy', from: '+19137179716' }, '2026-11-07T01:30:27Z'),
+      row('status', { callSid: parent, direction: 'inbound', callStatus: 'completed', duration: 8, from: '+19137179716' }, '2026-11-07T01:30:37Z'),
+    ])
+    expect(items).toHaveLength(1)
+    expect(items[0].outcome).toBe('no_answer')
+  })
 })
