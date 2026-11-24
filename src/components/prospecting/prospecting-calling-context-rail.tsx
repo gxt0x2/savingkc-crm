@@ -88,10 +88,19 @@ function ColumnHeader({ label, tone }: { label: string; tone: 'contact' | 'infor
 
 export function ProspectingCallingContextRail(props: ProspectingCallingContextRailProps) {
   const callRail = useWorkspaceCallRail()
+  const recordKey = props.prospect?.id || props.leadId || 'current'
+  const [recordScope, setRecordScope] = useState(recordKey)
   const [activeInfoTab, setActiveInfoTab] = useState<InformationTab>('notes')
   const [propertyTab, setPropertyTab] = useState<'street' | 'zillow'>('street')
   const [leadState, setLeadState] = useState<'idle' | 'saving' | 'saved'>(() => props.leadId ? 'saved' : 'idle')
   const [leadError, setLeadError] = useState<string | null>(null)
+  if (recordScope !== recordKey) {
+    setRecordScope(recordKey)
+    setActiveInfoTab('notes')
+    setPropertyTab('street')
+    setLeadState(props.leadId ? 'saved' : 'idle')
+    setLeadError(null)
+  }
   const commsEvents = useMemo(() => buildCommsTimeline(props.activities), [props.activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
   const contactNotes = useMemo(() => props.activities.filter((activity) => (
@@ -112,7 +121,6 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   const campaignQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
   const reportsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
   const recordingsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}&view=recordings` : '?view=recordings'
-  const recordKey = props.prospect?.id || props.leadId || 'current'
 
   async function markAsLead() {
     if (props.readOnlyPreview || leadState === 'saving' || leadState === 'saved') return
@@ -167,7 +175,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
         <div role="tablist" aria-label="Property lookup" className="grid grid-cols-2 border-b border-[var(--ck-border)] p-1">
           {(['street', 'zillow'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={propertyTab === tab} onClick={() => setPropertyTab(tab)} className={`min-h-9 rounded-lg text-xs font-black ${propertyTab === tab ? 'bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-sm' : 'text-[var(--ck-text-muted)]'}`}>{tab === 'street' ? 'Street View' : 'Zillow'}</button>)}
         </div>
-        {propertyTab === 'street' ? <div role="tabpanel" aria-label="Street View" className="min-h-[150px] flex-1 overflow-hidden"><StreetViewPanel address={situsLine} height="100%" /></div>
+        {propertyTab === 'street' ? <div role="tabpanel" aria-label="Street View" className="min-h-[150px] flex-1 overflow-hidden"><StreetViewPanel key={situsLine} address={situsLine} height="100%" /></div>
           : <div role="tabpanel" aria-label="Zillow" className="flex flex-1 flex-col gap-3 p-4">
             <div className="flex items-end justify-between gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
               <div><p className="text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Quick Zestimate</p><p className="mt-1 text-2xl font-black text-[var(--ck-text)]">{compactDollars(props.prospect?.zestimate)}</p></div>
