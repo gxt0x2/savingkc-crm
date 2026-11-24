@@ -51,6 +51,18 @@ describe('code violation county placement', () => {
       county: null,
       outOfArea: true,
     })
+    expect(resolveCodeViolationPlace({ county: 'Johnson', state: 'KS' })).toEqual({
+      county: 'johnson',
+      outOfArea: false,
+    })
+    expect(resolveCodeViolationPlace({ county: 'Johnson', state: 'MO' })).toEqual({
+      county: null,
+      outOfArea: true,
+    })
+    expect(resolveCodeViolationPlace({ county: 'Johnson' })).toEqual({
+      county: null,
+      outOfArea: false,
+    })
   })
 
   it('does not assign a split zip by itself', () => {

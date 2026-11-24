@@ -290,8 +290,8 @@ describe('listed and sold market check', () => {
     })).toBeNull()
   })
 
-  it('marks Kansas rows unconfirmed and keeps expired disclosure on', () => {
-    expect(ksLicenseUnconfirmed('KS')).toBe(true)
+  it('does not mark Kansas rows unconfirmed and keeps expired disclosure on', () => {
+    expect(ksLicenseUnconfirmed('KS')).toBe(false)
     expect(ksLicenseUnconfirmed('MO')).toBe(false)
     expect(requiresLicenseeDisclosure(true)).toBe(true)
     expect(requiresLicenseeDisclosure(false)).toBe(false)

@@ -1,6 +1,5 @@
+import { phoneCallSchedule } from '@/lib/calling/call-schedule'
 import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
-import { ksExpiredReleaseApproved } from '@/lib/market-check/flags'
-import { kansasExpiredPlace } from '@/lib/market-check/service-place'
 import { expiredCallingWindowOpen } from '@/lib/market-check/schedule'
 import { SourceListImportError } from '@/lib/source-lists/csv'
 import { sourceListRpcError, type SourceListRpcClient } from '@/lib/source-lists/import-source-list'
@@ -33,6 +32,8 @@ export const DIALER_EXPORT_COLUMNS = [
   'basis',
   'calling_window',
   'line_check_flag',
+  'call_tz',
+  'earliest_call_ct',
 ] as const
 
 export interface DialerExportRow {
@@ -60,6 +61,8 @@ export interface DialerExportRow {
   basis: string
   calling_window: string | null
   line_check_flag: string | null
+  call_tz: string
+  earliest_call_ct: string
 }
 
 export interface DialerExportExclusion {
@@ -97,21 +100,19 @@ function csvCell(column: (typeof DIALER_EXPORT_COLUMNS)[number], value: unknown)
 }
 
 /**
- * Export-path gate for an expired listing phone. Disclosure and single-line are
- * required here, not only as columns on the row. A skip-traced phone with no
- * linked prospect fails closed.
+ * Export-path gate for an expired listing phone. Single-line is required.
+ * Licensee disclosure stays on the row and does not block the export.
+ * A skip-traced phone with no linked prospect fails closed.
  */
 export function expiredExportPathBlock(
   row: Pick<DialerExportRow, 'list_type' | 'basis' | 'requires_licensee_disclosure' | 'prospect_id' | 'phone_origin' | 'state' | 'county'>,
   lineMode: number,
   now: Date = new Date(),
-): 'ks_license_unconfirmed' | 'outside_calling_hours' | 'expired_single_line_only' | 'licensee_disclosure_required' | 'owner_match_missing' | null {
+): 'outside_calling_hours' | 'expired_single_line_only' | 'owner_match_missing' | null {
   const expired = row.list_type === 'mls_expired' || row.basis === 'owner_override_2026-11-14'
   if (!expired) return null
-  if (kansasExpiredPlace(row.county, row.state) && !ksExpiredReleaseApproved()) return 'ks_license_unconfirmed'
   if (!expiredCallingWindowOpen(now)) return 'outside_calling_hours'
   if (lineMode !== 1) return 'expired_single_line_only'
-  if (row.requires_licensee_disclosure !== true) return 'licensee_disclosure_required'
   if (!row.prospect_id || row.phone_origin !== 'prospect_phone') return 'owner_match_missing'
   return null
 }
@@ -152,13 +153,19 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
     phone_origin: typeof row.phone_origin === 'string' ? row.phone_origin : '',
     export_batch_id: exportBatchId,
     requires_licensee_disclosure: row.requires_licensee_disclosure === true || row.requires_licensee_disclosure === 'true',
-    ks_license_unconfirmed: row.ks_license_unconfirmed === true || row.ks_license_unconfirmed === 'true' || row.state === 'KS',
+    ks_license_unconfirmed: row.ks_license_unconfirmed === true || row.ks_license_unconfirmed === 'true',
     basis: typeof row.basis === 'string' && row.basis
       ? row.basis
       : (typeof row.list_type === 'string' ? row.list_type : ''),
     calling_window: typeof row.calling_window === 'string' ? row.calling_window : null,
     line_check_flag: typeof row.line_check_flag === 'string' ? row.line_check_flag : null,
+    ...callScheduleFields(phone, typeof row.state === 'string' ? row.state : null),
   }
+}
+
+function callScheduleFields(phone: string, state: string | null): { call_tz: string; earliest_call_ct: string } {
+  const schedule = phoneCallSchedule(phone, state)
+  return { call_tz: schedule.callTz, earliest_call_ct: schedule.earliestCallCt }
 }
 
 function maskedExportPhone(value: unknown): string | null {

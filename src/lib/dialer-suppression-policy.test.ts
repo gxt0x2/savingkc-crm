@@ -413,14 +413,18 @@ describe('associate type and property owner fan-out', () => {
     }, 'mojo')).toBe('person_fanout')
     expect(exportBlockReason('+18165550138', {
       county: 'Jackson',
+      state: 'MO',
       phones: [{ phone: '+18165550138', relationship: 'owner', lastDisposition: 'no_answer' }],
     })).toBeNull()
     expect(exportBlockReason('+18165550139', { county: 'Cass', phones: [{ phone: '+18165550139', relationship: 'owner' }] })).toBe('out_of_service_area')
     const areaPhone = '+18165550148'
     const areaOwner = { phones: [{ phone: areaPhone, relationship: 'owner' as const, lastDisposition: 'no_answer' }] }
-    for (const county of ['Jackson', 'jackson', ' clay ', 'Platte', 'Wyandotte', 'Johnson']) {
-      expect(exportBlockReason(areaPhone, { ...areaOwner, county })).toBeNull()
+    for (const [county, state] of [['Jackson', 'MO'], ['jackson', 'MO'], [' clay ', 'MO'], ['Platte', 'MO'], ['Wyandotte', 'KS'], ['Johnson', 'KS']] as const) {
+      expect(exportBlockReason(areaPhone, { ...areaOwner, county, state })).toBeNull()
     }
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Johnson' })).toBe('county_unresolved')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Johnson', state: 'MO' })).toBe('out_of_service_area')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Johnson', state: 'KS' })).toBeNull()
     expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Bates' })).toBe('out_of_service_area')
     expect(exportBlockReason(areaPhone, { ...areaOwner, county: null })).toBe('county_unresolved')
     expect(exportBlockReason(areaPhone, { ...areaOwner, county: '   ' })).toBe('county_unresolved')

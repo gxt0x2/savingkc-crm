@@ -1,3 +1,4 @@
+import { campaignEndOpen, localTcpaWindowOpen, phoneCallSchedule, recipientCallWindowOpen } from '@/lib/calling/call-schedule'
 import { dispositionStopsNumber, normalizeDisposition } from '@/lib/dialer-dispositions'
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -218,7 +219,16 @@ export function evaluateDialerCallPolicy(input: DialerCallPolicyInput): DialerCa
     if (blocked) return dialerCallBlock(blocked, normalizedPhone)
   }
 
-  if (input.surface !== 'crm' && !input.callingHoursExempt && !isWithinDialerCallingHours(input.now)) {
+  const now = input.now ?? new Date()
+  const schedule = phoneCallSchedule(normalizedPhone)
+  if (!localTcpaWindowOpen(schedule, now)) {
+    return dialerCallBlock('outside_calling_hours', normalizedPhone)
+  }
+  if (input.surface !== 'crm' && !input.callingHoursExempt && (
+    !recipientCallWindowOpen(schedule, now)
+    || !isWithinDialerCallingHours(now)
+    || !campaignEndOpen(now)
+  )) {
     return dialerCallBlock('outside_calling_hours', normalizedPhone)
   }
 

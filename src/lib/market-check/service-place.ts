@@ -25,9 +25,3 @@ export function servicePlace(
   const match = SERVICE_PLACES.find((place) => place.county === normalizedCounty && place.state === normalizedState)
   return match ? { county: match.county, state: match.state } : null
 }
-
-export function kansasExpiredPlace(county: string | null | undefined, state: string | null | undefined): boolean {
-  const normalizedCounty = (county ?? '').trim().toLowerCase()
-  const normalizedState = (state ?? '').trim().toUpperCase()
-  return normalizedState === 'KS' || normalizedCounty === 'wyandotte' || normalizedCounty === 'johnson'
-}

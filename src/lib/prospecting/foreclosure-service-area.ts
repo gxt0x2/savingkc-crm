@@ -11,6 +11,14 @@ const SERVICE_AREA_STATE: Record<ForeclosureServiceCounty, ForeclosureServiceSta
   wyandotte: 'KS',
 }
 
+/** These names exist in both Missouri and Kansas. A county check without a state is not a match. */
+const AMBIGUOUS_SERVICE_COUNTIES = new Set<ForeclosureServiceCounty>(['jackson', 'clay', 'johnson'])
+
+export function ambiguousServiceCounty(raw: unknown): boolean {
+  const county = serviceAreaCounty(raw)
+  return county !== null && AMBIGUOUS_SERVICE_COUNTIES.has(county)
+}
+
 function countyWords(raw: unknown): string {
   if (typeof raw !== 'string') return ''
   return raw.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
@@ -38,9 +46,11 @@ function explicitServiceState(raw: unknown): ForeclosureServiceState | 'other' |
 }
 
 /**
- * Jackson, Clay, and Platte are Missouri. Johnson and Wyandotte are Kansas.
- * A blank state is taken from that county. "Johnson County, KS" is read as the county plus its state.
- * Any other state is rejected.
+ * A service place is a county AND its state.
+ * Jackson, Clay, and Platte are the Missouri pair. Johnson and Wyandotte are the Kansas pair.
+ * Jackson, Clay, and Johnson also exist in the other state, so a missing state does not pick one.
+ * Platte and Wyandotte do not, so a blank state can take that only state.
+ * "Johnson County, KS" is the county plus its state. Johnson County, MO is not this pair.
  */
 export function serviceAreaPlace(
   countyRaw: unknown,
@@ -52,9 +62,9 @@ export function serviceAreaPlace(
   if (!county) return null
   const expected = SERVICE_AREA_STATE[county]
   const embedded = embeddedMatch ? explicitServiceState(embeddedMatch[2]) : null
-  const explicit = explicitServiceState(stateRaw)
-  if (embedded === 'other' || explicit === 'other') return null
-  if (embedded && embedded !== expected) return null
+  const explicit = explicitServiceState(stateRaw) ?? embedded
+  if (explicit === 'other') return null
+  if (AMBIGUOUS_SERVICE_COUNTIES.has(county) && explicit == null) return null
   if (explicit && explicit !== expected) return null
-  return { county, state: expected }
+  return { county, state: explicit ?? expected }
 }

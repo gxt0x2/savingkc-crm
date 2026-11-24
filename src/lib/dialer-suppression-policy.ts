@@ -158,6 +158,7 @@ export interface SuppressionContact {
 export interface SuppressionWorld {
   county?: string | null
   situsCounty?: string | null
+  state?: string | null
   phones?: readonly SuppressionPhone[]
   prospects?: readonly SuppressionProspect[]
   leads?: readonly SuppressionLead[]
@@ -506,15 +507,40 @@ function mojoLast4Tied(world: SuppressionWorld, key: string, call: SuppressionMo
   return (mineKey !== null && keys.has(mineKey)) || phonesOf(world).some((phone) => sameKey(phone.phone, key) && keys.has(householdKey(prospectFor(world, phone.prospectId)) ?? ''))
 }
 
+const SERVICE_PAIR: Record<string, 'MO' | 'KS'> = {
+  jackson: 'MO',
+  clay: 'MO',
+  platte: 'MO',
+  johnson: 'KS',
+  wyandotte: 'KS',
+}
+const AMBIGUOUS_COUNTY = new Set(['jackson', 'clay', 'johnson'])
+
+function countyToken(value: string | null | undefined): string | null {
+  const token = String(value ?? '').trim().toLowerCase().replace(/\./g, '').replace(/\bcounty\b/g, '').replace(/\s+/g, ' ').trim()
+  if (!token || token === 'unknown' || token === 'unresolved') return null
+  return token
+}
+
+function worldState(value: string | null | undefined): 'MO' | 'KS' | 'other' | null {
+  const token = String(value ?? '').trim().toLowerCase()
+  if (!token) return null
+  if (token === 'mo' || token === 'missouri') return 'MO'
+  if (token === 'ks' || token === 'kansas') return 'KS'
+  return 'other'
+}
+
 function serviceAreaReason(world: SuppressionWorld): 'out_of_service_area' | 'county_unresolved' | null {
   if (!('county' in world) && !('situsCounty' in world)) return null
-  const allowed = new Set(['jackson', 'clay', 'platte', 'wyandotte', 'johnson'])
-  const unresolved = new Set(['unknown', 'unresolved'])
-  const named = [world.county, world.situsCounty]
-    .map((value) => String(value ?? '').trim().toLowerCase())
-    .filter((value) => value && !unresolved.has(value))
-  if (named.some((value) => !allowed.has(value))) return 'out_of_service_area'
-  if (!named.some((value) => allowed.has(value))) return 'county_unresolved'
+  const named = [world.county, world.situsCounty].map((value) => countyToken(value)).filter((value): value is string => Boolean(value))
+  if (named.length === 0) return 'county_unresolved'
+  const state = worldState(world.state)
+  for (const county of named) {
+    const expected = SERVICE_PAIR[county]
+    if (!expected) return 'out_of_service_area'
+    if (state === 'other' || (state && state !== expected)) return 'out_of_service_area'
+    if (!state && AMBIGUOUS_COUNTY.has(county)) return 'county_unresolved'
+  }
   return null
 }
 

@@ -10,12 +10,11 @@ import { marketSeedPayload } from '@/lib/market-check/seeds'
 export async function syncMarketFlags(db: SupabaseClient): Promise<void> {
   const enabled = explicitEnvFlag('MLS_MARKET_CHECK_ENABLED')
   const confirmed = explicitEnvFlag('EXPIRED_OWNER_CONFIRMED')
-  const ksRelease = explicitEnvFlag('KS_EXPIRED_RELEASE_APPROVED')
-  if (enabled !== false && confirmed !== false && ksRelease !== false) return
+  if (enabled !== false && confirmed !== false) return
   const { error } = await db.rpc('sync_mls_market_flags_v1', {
     p_market_check_enabled: enabled === false ? 'false' : null,
     p_expired_owner_confirmed: confirmed === false ? 'false' : null,
-    p_ks_expired_release_approved: ksRelease === false ? 'false' : null,
+    p_ks_expired_release_approved: null,
   })
   if (error) throw new Error(error.message)
 }

@@ -12,14 +12,14 @@ import {
 import { parseForeclosureCsvTable } from '@/lib/prospecting/foreclosure-csv'
 import {
   INTAKE_CONTROL_COUNTIES,
+  ambiguousServiceCounty,
   missingServiceCounty,
   serviceAreaCounty,
   serviceAreaPlace,
 } from '@/lib/prospecting/foreclosure-service-area'
 
 export const FORECLOSURE_INTAKE_BATCH_LIMIT = 500
-export const KS_LICENSE_BLOCK = 'ks_license_unconfirmed'
-export { INTAKE_CONTROL_COUNTIES, missingServiceCounty, serviceAreaCounty, serviceAreaPlace }
+export { INTAKE_CONTROL_COUNTIES, ambiguousServiceCounty, missingServiceCounty, serviceAreaCounty, serviceAreaPlace }
 
 const STREET_SUFFIX: Record<string, string> = {
   street: 'st', st: 'st', avenue: 'ave', ave: 'ave', road: 'rd', rd: 'rd',
@@ -367,8 +367,14 @@ export function prepareIntakeRow(
     if (missingServiceCounty(input.county)) {
       return { ok: false, code: 'county_required', reason: 'County is required. A missing county stays paused.' }
     }
+    if (ambiguousServiceCounty(input.county) && !explicitIntakeState(input.state)) {
+      return { ok: false, code: 'state_required', reason: 'Jackson, Clay, and Johnson need a state. The same county name exists in Missouri and Kansas.' }
+    }
+    if (serviceAreaCounty(input.county) && explicitIntakeState(input.state) && ambiguousServiceCounty(input.county)) {
+      return { ok: false, code: 'outside_service_area', reason: 'That county and state are outside Jackson, Clay, and Platte in Missouri and Johnson and Wyandotte in Kansas.' }
+    }
     if (serviceAreaCounty(input.county)) {
-      return { ok: false, code: 'state_mismatch', reason: 'State does not match that county. Jackson, Clay, and Platte are Missouri. Johnson and Wyandotte are Kansas.' }
+      return { ok: false, code: 'state_mismatch', reason: 'State does not match that county. Platte is Missouri. Wyandotte is Kansas.' }
     }
     return { ok: false, code: 'outside_service_area', reason: 'County must be Jackson, Clay, Platte, Johnson, or Wyandotte.' }
   }
@@ -549,6 +555,14 @@ export function bestIntakeMatch(
   return { candidate: winner.candidate, tier: winner.tier }
 }
 
+function explicitIntakeState(raw: unknown): 'MO' | 'KS' | null {
+  if (typeof raw !== 'string') return null
+  const value = raw.toLowerCase().replace(/\./g, '').trim()
+  if (value === 'mo' || value === 'missouri') return 'MO'
+  if (value === 'ks' || value === 'kansas') return 'KS'
+  return null
+}
+
 export type IntakeReviewStatus = 'pending' | 'approved' | 'rejected'
 
 /** Pending and rejected rows never reach skip trace, export, or a dialer. */
@@ -564,8 +578,6 @@ export function foreclosureIntakeOutreachBlockers(input: {
   if (input.reviewStatus !== 'approved') blockers.push('intake_not_approved')
   if (input.dnc) blockers.push('do_not_call')
   if (input.optedOut) blockers.push('sms_opt_out')
-  const kansas = (input.state ?? '').toUpperCase() === 'KS' || input.county === 'johnson' || input.county === 'wyandotte'
-  if (kansas && input.ksLicenseConfirmed !== true) blockers.push(KS_LICENSE_BLOCK)
   return blockers
 }
 

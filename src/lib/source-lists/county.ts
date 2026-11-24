@@ -164,6 +164,21 @@ export function parcelMatchCounty(record: Record<string, string>): ServiceAreaCo
   return hits.size === 1 ? [...hits][0] : null
 }
 
+function listedState(value: string | null | undefined): 'MO' | 'KS' | null {
+  const token = placeName(value)
+  if (token === 'mo' || token === 'missouri') return 'MO'
+  if (token === 'ks' || token === 'kansas') return 'KS'
+  return null
+}
+
+/** County and state together. Jackson, Clay, and Johnson are not a match without a state. */
+function serviceCountyState(county: ServiceAreaCounty, stateRaw: string | null | undefined): 'match' | 'other' | 'missing' {
+  const state = listedState(stateRaw)
+  const expected = county === 'johnson' || county === 'wyandotte' ? 'KS' : 'MO'
+  if (!state) return county === 'jackson' || county === 'clay' || county === 'johnson' ? 'missing' : 'match'
+  return state === expected ? 'match' : 'other'
+}
+
 export function resolveCodeViolationPlace(record: Record<string, string>): CodeViolationPlace {
   const fromParcel = parcelMatchCounty(record)
   if (fromParcel) return { county: fromParcel, outOfArea: false }
@@ -173,7 +188,11 @@ export function resolveCodeViolationPlace(record: Record<string, string>): CodeV
   if (outsideServiceArea(record, zip, city)) return { county: null, outOfArea: true }
 
   const explicit = canonicalServiceCounty(record.county || record.situs_county || '')
-  if (explicit) return { county: explicit, outOfArea: false }
+  if (explicit) {
+    const paired = serviceCountyState(explicit, record.state || record.situs_state || '')
+    if (paired === 'match') return { county: explicit, outOfArea: false }
+    if (paired === 'other') return { county: null, outOfArea: true }
+  }
 
   const fromZip = countyFromZip(zip)
   if (fromZip) return { county: fromZip, outOfArea: false }
