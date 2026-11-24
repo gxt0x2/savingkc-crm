@@ -493,7 +493,8 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
 }
 
 /** Kept on the export row. Kansas geography does not set it. */
-export function ksLicenseUnconfirmed(_state: string | null | undefined): boolean {
+export function ksLicenseUnconfirmed(state: string | null | undefined): boolean {
+  void state
   return false
 }
 
