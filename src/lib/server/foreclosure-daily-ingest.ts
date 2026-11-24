@@ -1,4 +1,3 @@
-import { Resend } from 'resend'
 import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
 import {
   FIRST_FORECLOSURE_COUNTIES,
@@ -8,18 +7,44 @@ import {
   type IngestControl,
   scrapeUpdatedSince,
 } from '@/lib/prospecting/foreclosure'
+import { fetchCountyPublicCsv } from '@/lib/server/foreclosure-county-public'
 import {
   listForeclosureIngestControls,
   setForeclosureIngestControl,
 } from '@/lib/server/foreclosure-ingest'
 import { ForeclosureError, importForeclosureCsv } from '@/lib/server/foreclosure-prospects'
-import { fetchCountyPublicCsv } from '@/lib/server/foreclosure-county-public'
+import {
+  alertCounties,
+  countyLabel,
+  evaluateForeclosureCounties,
+  foreclosureCountyProviderSignals,
+  isChicagoWeekday,
+  laterIso,
+  loadForeclosureCountyActivity,
+  sendForeclosureStaleAlert,
+  type ForeclosureCountyProviderSignal,
+  type ForeclosureStaleAlertResult,
+} from '@/lib/server/foreclosure-stale-alert'
 import { supabase } from '@/lib/supabase-lazy'
 
 const TABLE = 'mortgage_foreclosure_prospects'
 const STALE_MS = 24 * 60 * 60 * 1000
-const DEFAULT_ALERT_TO = 'ernest@savingkc.com'
-const DEFAULT_ALERT_MIN_INTERVAL_MS = 20 * 60 * 60 * 1000
+
+export {
+  activeForeclosureCounties,
+  evaluateForeclosureCounties,
+  foreclosureCountyProviderSignals,
+  isChicagoWeekday,
+  loadForeclosureCountyActivity,
+  resetForeclosureStaleAlertDedupeForTests,
+  sendForeclosureStaleAlert,
+} from '@/lib/server/foreclosure-stale-alert'
+export type {
+  ForeclosureCountyActivity,
+  ForeclosureCountyProviderSignal,
+  ForeclosureStaleAlertResult,
+  ForeclosureStaleCounty,
+} from '@/lib/server/foreclosure-stale-alert'
 
 export type ForeclosureFreshness = {
   newestCreatedAt: string | null
@@ -69,27 +94,18 @@ export type ForeclosureDailyIngestResult = {
     source: string
   }
   watermarksAdvanced: Array<{ county: string; noticeType: ForeclosureNoticeType; updatedSince: string }>
-  staleAlert: {
-    warranted: boolean
-    sent: boolean
-    skippedReason: string | null
-    to: string | null
-  }
+  staleAlert: ForeclosureStaleAlertResult
   notes: string[]
+}
+
+type ResolvedForeclosureProvider = ForeclosureProviderStatus & {
+  countySignals: ForeclosureCountyProviderSignal[]
 }
 
 /** System actor for cron/CSV drops. Never invents a human identity. */
 export function foreclosureCronActor(): AuthenticatedActor {
   const email = (process.env.FORECLOSURE_INGEST_ACTOR_EMAIL || 'foreclosure-cron@savingkc.com').trim().toLowerCase()
   return { email, name: 'Foreclosure daily ingest' }
-}
-
-export function isChicagoWeekday(now = new Date()): boolean {
-  const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    weekday: 'short',
-  }).format(now)
-  return weekday !== 'Sat' && weekday !== 'Sun'
 }
 
 export function evaluateForeclosureStale(input: {
@@ -115,15 +131,6 @@ export function evaluateForeclosureStale(input: {
   // so a county_public upsert counts as a landing even when the row already existed.
   const stale = chicagoWeekday && ageMs >= thresholdMs
   return { ageMs, stale, chicagoWeekday }
-}
-
-function laterIso(left: string | null, right: string | null): string | null {
-  const leftMs = left ? Date.parse(left) : NaN
-  const rightMs = right ? Date.parse(right) : NaN
-  if (!Number.isFinite(leftMs) && !Number.isFinite(rightMs)) return null
-  if (!Number.isFinite(rightMs)) return left
-  if (!Number.isFinite(leftMs)) return right
-  return leftMs >= rightMs ? left : right
 }
 
 export async function getForeclosureFreshness(now = new Date()): Promise<ForeclosureFreshness> {
@@ -210,7 +217,7 @@ export async function ensureForeclosureIngestControls(actor: AuthenticatedActor)
 export async function resolveForeclosureIngestProvider(input?: {
   csvBody?: string | null
   now?: Date
-}): Promise<ForeclosureProviderStatus> {
+}): Promise<ResolvedForeclosureProvider> {
   const documentedSecrets = [
     'CRON_SECRET',
     'RESEND_API_KEY',
@@ -227,6 +234,7 @@ export async function resolveForeclosureIngestProvider(input?: {
       provider: 'csv_url',
       csv: input.csvBody,
       source: 'request_body',
+      countySignals: [],
     }
   }
 
@@ -238,6 +246,7 @@ export async function resolveForeclosureIngestProvider(input?: {
       reason: 'PropStream is not a foreclosure ingest provider. This repo has no PropStream API client and will not invent one. Daily ingest is county_public. PropStream may be used later for equity only. MLS/Matrix is value and comps only.',
       missingSecrets: [],
       documentedSecrets,
+      countySignals: [],
     }
   }
 
@@ -250,6 +259,7 @@ export async function resolveForeclosureIngestProvider(input?: {
         reason: 'FORECLOSURE_INGEST_PROVIDER=csv_url but FORECLOSURE_INGEST_CSV_URL is empty. Daily ingest should stay on county_public.',
         missingSecrets: ['FORECLOSURE_INGEST_CSV_URL'],
         documentedSecrets,
+        countySignals: [],
       }
     }
     try {
@@ -259,24 +269,26 @@ export async function resolveForeclosureIngestProvider(input?: {
         cache: 'no-store',
       })
       if (!response.ok) {
-        return { status: 'error', provider: 'csv_url', reason: `CSV drop URL returned HTTP ${response.status}.` }
+        return { status: 'error', provider: 'csv_url', reason: `CSV drop URL returned HTTP ${response.status}.`, countySignals: [] }
       }
       const csv = await response.text()
-      if (!csv.trim()) return { status: 'error', provider: 'csv_url', reason: 'CSV drop URL returned an empty body.' }
-      return { status: 'ready', provider: 'csv_url', csv, source: csvUrl }
+      if (!csv.trim()) return { status: 'error', provider: 'csv_url', reason: 'CSV drop URL returned an empty body.', countySignals: [] }
+      return { status: 'ready', provider: 'csv_url', csv, source: csvUrl, countySignals: [] }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'csv_url_fetch_failed'
-      return { status: 'error', provider: 'csv_url', reason: message.slice(0, 300) }
+      return { status: 'error', provider: 'csv_url', reason: message.slice(0, 300), countySignals: [] }
     }
   }
 
   const pulled = await fetchCountyPublicCsv({ now: input?.now })
+  const countySignals = foreclosureCountyProviderSignals({ errors: pulled.errors, stats: pulled.stats })
   if (!pulled.ok && pulled.stats.importable === 0 && pulled.errors.length >= 4) {
     return {
       status: 'error',
       provider: 'county_public',
       reason: pulled.errors.slice(0, 4).join('; ') || 'county_public sources failed',
       sourceNotes: pulled.notes,
+      countySignals,
     }
   }
   if (pulled.stats.importable === 0) {
@@ -287,6 +299,7 @@ export async function resolveForeclosureIngestProvider(input?: {
       missingSecrets: [],
       documentedSecrets,
       sourceNotes: pulled.notes,
+      countySignals,
     }
   }
   return {
@@ -295,6 +308,7 @@ export async function resolveForeclosureIngestProvider(input?: {
     csv: pulled.csv,
     source: 'county_public',
     sourceNotes: pulled.notes,
+    countySignals,
   }
 }
 
@@ -316,91 +330,6 @@ export async function advanceForeclosureWatermarks(
     advanced.push({ county: control.county, noticeType: control.noticeType, updatedSince: stamp })
   }
   return advanced
-}
-
-function alertMinIntervalMs(): number {
-  const raw = Number(process.env.FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS)
-  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw * 60 * 60 * 1000)
-  return DEFAULT_ALERT_MIN_INTERVAL_MS
-}
-
-/** Module-local dedupe so a noisy cron does not spam Resend within one instance. */
-let lastStaleAlertAtMs = 0
-
-export function resetForeclosureStaleAlertDedupeForTests() {
-  lastStaleAlertAtMs = 0
-}
-
-export async function sendForeclosureStaleAlert(input: {
-  freshness: ForeclosureFreshness
-  notes: string[]
-  force?: boolean
-}): Promise<{ sent: boolean; skippedReason: string | null; to: string | null }> {
-  const to = (process.env.FORECLOSURE_STALE_ALERT_TO || DEFAULT_ALERT_TO).trim().toLowerCase()
-  if (!input.freshness.stale && !input.force) {
-    return { sent: false, skippedReason: 'not_stale', to }
-  }
-  if (!input.freshness.chicagoWeekday && !input.force) {
-    return { sent: false, skippedReason: 'weekend', to }
-  }
-
-  const now = Date.now()
-  if (!input.force && lastStaleAlertAtMs && now - lastStaleAlertAtMs < alertMinIntervalMs()) {
-    return { sent: false, skippedReason: 'min_interval', to }
-  }
-
-  const apiKey = process.env.RESEND_API_KEY?.trim()
-  const from = process.env.RESEND_FROM_EMAIL?.trim()
-  if (!apiKey || !from) {
-    console.warn('[foreclosure-daily-ingest] stale alert skipped: RESEND_API_KEY / RESEND_FROM_EMAIL missing', {
-      newestCreatedAt: input.freshness.newestCreatedAt,
-    })
-    return { sent: false, skippedReason: 'resend_not_configured', to }
-  }
-
-  const ageHours = input.freshness.ageMs == null
-    ? 'unknown (empty table)'
-    : `${(input.freshness.ageMs / 3_600_000).toFixed(1)}h`
-  const subject = `Foreclosure portal stale — last create ${ageHours}`
-  const body = [
-    'Saving KC CRM foreclosure daily ingest',
-    '',
-    `Chicago date: ${input.freshness.chicagoDate}`,
-    `Prospect rows: ${input.freshness.prospectCount}`,
-    `Newest created_at: ${input.freshness.newestCreatedAt ?? '(none)'}`,
-    `Newest updated_at: ${input.freshness.newestUpdatedAt ?? '(none)'}`,
-    `Age: ${ageHours}`,
-    '',
-    'Portal: https://crm.savingkc.com/prospecting/foreclosure',
-    '',
-    'Notes:',
-    ...(input.notes.length ? input.notes.map((note) => `- ${note}`) : ['- (none)']),
-    '',
-    'This alert fails soft and never sends SMS. Daily ingest is county_public (JoCo sheriff, Legal Record, SouthLaw, NoticeRegistry). mopublicnotices still needs a computerUse browser. No manual CSV and no PropStream ingest.',
-  ].join('\n')
-
-  try {
-    const resend = new Resend(apiKey)
-    const result = await resend.emails.send({
-      from: `Saving KC CRM <${from}>`,
-      to: [to],
-      subject,
-      text: body,
-    })
-    if (result.error) {
-      console.error('[foreclosure-daily-ingest] stale alert Resend error', {
-        message: result.error.message?.slice(0, 300),
-      })
-      return { sent: false, skippedReason: 'resend_error', to }
-    }
-    lastStaleAlertAtMs = now
-    return { sent: true, skippedReason: null, to }
-  } catch (error) {
-    console.error('[foreclosure-daily-ingest] stale alert failed soft', {
-      message: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
-    })
-    return { sent: false, skippedReason: 'resend_exception', to }
-  }
 }
 
 export async function runForeclosureDailyIngest(input?: {
@@ -425,7 +354,8 @@ export async function runForeclosureDailyIngest(input?: {
     if (watermark) notes.push(`Watermark ${control.county}/${control.noticeType}=${watermark}`)
   }
 
-  const provider = await resolveForeclosureIngestProvider({ csvBody: input?.csvBody })
+  const resolved = await resolveForeclosureIngestProvider({ csvBody: input?.csvBody, now })
+  const { countySignals, ...provider } = resolved
   let importResult: ForeclosureDailyIngestResult['import'] = null
   let watermarksAdvanced: ForeclosureDailyIngestResult['watermarksAdvanced'] = []
 
@@ -461,12 +391,35 @@ export async function runForeclosureDailyIngest(input?: {
     notes.push(`Freshness ok — newest created_at ${freshness.newestCreatedAt ?? '(none)'}`)
   }
 
-  const staleAlert = input?.skipAlert
-    ? { warranted: freshness.stale, sent: false, skippedReason: 'skip_alert_flag', to: null }
-    : {
-        warranted: freshness.stale,
-        ...(await sendForeclosureStaleAlert({ freshness, notes })),
+  const countyReport = evaluateForeclosureCounties({
+    counties: await loadForeclosureCountyActivity({ controls, signals: countySignals }),
+    now,
+  })
+  const staleNames = countyReport.counties.filter((county) => county.stale).map((county) => countyLabel(county.county, county.state))
+  if (countyReport.counties.length === 0) {
+    notes.push('All ingest controls are paused — no county stale alert.')
+  } else if (staleNames.length) {
+    notes.push(`Stale counties: ${staleNames.join(', ')}`)
+  } else if (countyReport.chicagoWeekday) {
+    notes.push('Unpaused counties are inside the freshness window.')
+  } else {
+    notes.push('Weekend — county stale alert skipped.')
+  }
+
+  const staleAlert: ForeclosureStaleAlertResult = input?.skipAlert
+    ? {
+        warranted: countyReport.warranted,
+        sent: false,
+        skippedReason: 'skip_alert_flag',
+        to: null,
+        counties: alertCounties(countyReport.counties),
       }
+    : await sendForeclosureStaleAlert({
+        counties: countyReport.counties,
+        notes,
+        chicagoDate: countyReport.chicagoDate,
+        chicagoWeekday: countyReport.chicagoWeekday,
+      })
 
   const ok = provider.status !== 'error' && (importResult == null || importResult.imported >= 0)
   return {
@@ -479,12 +432,7 @@ export async function runForeclosureDailyIngest(input?: {
     provider,
     import: importResult,
     watermarksAdvanced,
-    staleAlert: {
-      warranted: staleAlert.warranted,
-      sent: staleAlert.sent,
-      skippedReason: staleAlert.skippedReason,
-      to: staleAlert.to,
-    },
+    staleAlert,
     notes,
   }
 }
