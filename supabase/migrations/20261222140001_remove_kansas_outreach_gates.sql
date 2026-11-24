@@ -113,27 +113,127 @@ $old$,
   ''
 );
 
+-- pg_get_viewdef(..., true) pretty-prints the Kansas stamp as
+-- upper(COALESCE(state, ''::text)). Rebuild the view from that live
+-- definition and keep every column, in order, with the stamp forced false.
 DO $view$
 DECLARE
   v_def text;
-  v_next text;
+  v_cols text;
 BEGIN
-  v_def := pg_get_viewdef('public.source_list_market_phone_review'::regclass, true);
-  v_next := regexp_replace(
-    v_def,
-    'upper\(coalesce\(review\.state, ''''\)\) = ''KS''[\s\S]*?AS ks_license_unconfirmed',
-    'false AS ks_license_unconfirmed',
-    'i'
+  v_def := regexp_replace(
+    pg_get_viewdef('public.source_list_market_phone_review'::regclass, true),
+    ';[[:space:]]*$',
+    ''
   );
-  IF v_next = v_def THEN
-    RAISE EXCEPTION 'source_list_market_phone_review still stamps ks_license_unconfirmed from Kansas';
+  SELECT string_agg(
+    CASE
+      WHEN attribute.attname = 'ks_license_unconfirmed' THEN 'false AS ks_license_unconfirmed'
+      ELSE format('base.%I', attribute.attname)
+    END,
+    ', ' ORDER BY attribute.attnum
+  )
+  INTO v_cols
+  FROM pg_attribute AS attribute
+  WHERE attribute.attrelid = 'public.source_list_market_phone_review'::regclass
+    AND attribute.attnum > 0
+    AND NOT attribute.attisdropped;
+  IF v_cols IS NULL OR position('ks_license_unconfirmed' IN v_cols) = 0 THEN
+    RAISE EXCEPTION 'source_list_market_phone_review is missing ks_license_unconfirmed';
   END IF;
-  EXECUTE 'CREATE OR REPLACE VIEW public.source_list_market_phone_review WITH (security_invoker = true) AS ' || v_next;
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW public.source_list_market_phone_review WITH (security_invoker = true) AS SELECT %s FROM (%s) AS base',
+    v_cols,
+    v_def
+  );
 END;
 $view$;
 
-UPDATE public.tc_document_templates
-SET body = replace(body, 'Missouri and/or Kansas', 'Missouri')
-WHERE body LIKE '%Missouri and/or Kansas%';
+CREATE OR REPLACE FUNCTION public.service_county_state_pair_v1(p_county text, p_state text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, public
+AS $pair$
+  SELECT (lower(btrim(coalesce(p_county, ''))), upper(btrim(coalesce(p_state, '')))) IN (
+    ('jackson', 'MO'),
+    ('clay', 'MO'),
+    ('platte', 'MO'),
+    ('johnson', 'KS'),
+    ('wyandotte', 'KS')
+  );
+$pair$;
+
+REVOKE ALL ON FUNCTION public.service_county_state_pair_v1(text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.service_county_state_pair_v1(text, text) TO service_role;
+
+-- County name alone is not a service place. Johnson with no state is not Johnson KS.
+SELECT public.rewrite_live_function_v1(
+  'source_list_phone_block_reasons_v1',
+  $old$normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')$old$,
+  $new$normalized.slug NOT IN ('unknown', 'unresolved') AND NOT public.service_county_state_pair_v1(normalized.slug, (
+            SELECT upper(btrim(prospect.situs_state))
+            FROM public.prospects AS prospect
+            WHERE prospect.id = input.prospect_id
+          ))$new$
+);
+
+SELECT public.rewrite_live_function_v1(
+  'source_list_phone_block_reasons_v1',
+  $old$normalized.slug IN ('jackson', 'clay', 'platte', 'wyandotte', 'johnson')$old$,
+  $new$public.service_county_state_pair_v1(normalized.slug, (
+            SELECT upper(btrim(prospect.situs_state))
+            FROM public.prospects AS prospect
+            WHERE prospect.id = input.prospect_id
+          ))$new$
+);
+
+CREATE OR REPLACE FUNCTION public.market_service_place_v1(p_zip text, p_parcel text)
+RETURNS TABLE(county text, state text)
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_county text;
+  v_state text;
+  v_zip text := nullif(substring(coalesce(p_zip, '') from '[0-9]{5}'), '');
+  v_parcel text := nullif(upper(regexp_replace(coalesce(p_parcel, ''), '[^A-Za-z0-9]', '', 'g')), '');
+BEGIN
+  IF v_zip IS NOT NULL AND to_regclass('public.target_zips') IS NOT NULL THEN
+    SELECT lower(btrim(z.county)), upper(btrim(z.state))
+    INTO v_county, v_state
+    FROM public.target_zips AS z
+    WHERE z.zip5 = v_zip;
+  END IF;
+  IF (v_county IS NULL OR v_state IS NULL) AND v_parcel IS NOT NULL AND to_regclass('public.prospects') IS NOT NULL THEN
+    SELECT lower(btrim(prospect.county)), upper(btrim(prospect.situs_state))
+    INTO v_county, v_state
+    FROM public.prospects AS prospect
+    WHERE upper(regexp_replace(coalesce(prospect.parcel_id, ''), '[^A-Za-z0-9]', '', 'g')) = v_parcel
+      AND nullif(btrim(coalesce(prospect.county, '')), '') IS NOT NULL
+      AND nullif(btrim(coalesce(prospect.situs_state, '')), '') IS NOT NULL
+    LIMIT 1;
+  END IF;
+  IF v_county IN ('unknown', 'unresolved') OR v_county IS NULL OR v_state IS NULL THEN
+    county := NULL;
+    state := NULL;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+  IF public.service_county_state_pair_v1(v_county, v_state) THEN
+    county := v_county;
+    state := v_state;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+  county := NULL;
+  state := NULL;
+  RETURN NEXT;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.market_service_place_v1(text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.market_service_place_v1(text, text) TO service_role;
 
 DROP FUNCTION public.rewrite_live_function_v1(text, text, text);

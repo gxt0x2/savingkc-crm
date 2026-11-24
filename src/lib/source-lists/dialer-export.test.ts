@@ -98,6 +98,21 @@ describe('dialer export file', () => {
       sourceListId: null,
     })
     expect(scrub.excludedCounts).toEqual({ prospect_dnc: 1 })
+    const retired = await recordDialerExportBatch({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          export_batch_id: '22222222-2222-4222-8222-222222222222',
+          rows: [row('+18165550101')],
+          excluded_counts: { prospect_dnc: 1, licensee_disclosure_required: 4 },
+          excluded_phones: [],
+        },
+        error: null,
+      }),
+    }, 'casey@savingkc.com', {
+      listType: null, county: null, state: null, violationKind: null, sourceListId: null,
+    })
+    expect(retired.excludedCounts).toEqual({ prospect_dnc: 1 })
+    expect(retired.excludedCounts).not.toHaveProperty('licensee_disclosure_required')
     expect(scrub.excludedPhones).toEqual([{ reason: 'prospect_dnc', phoneMasked: '******4411' }])
   })
 

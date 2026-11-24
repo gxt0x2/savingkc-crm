@@ -23,10 +23,8 @@ describe('service places are county and state', () => {
       join(process.cwd(), 'supabase/migrations/20261222140001_remove_kansas_outreach_gates.sql'),
       'utf8',
     )
-    expect(migration).toContain("RETURN 'ks_license_unconfirmed'")
-    expect(migration).toContain('requires_licensee_disclosure IS TRUE')
-    expect(migration).toContain("WHEN false THEN NULL")
-    expect(migration).toContain("v_county IN ('jackson', 'clay', 'johnson') AND v_state IS NULL")
-    expect(migration).not.toMatch(/\bmojo_call_queue\b/i)
+    expect(migration).toContain('false AS ks_license_unconfirmed')
+    expect(migration).toContain('service_county_state_pair_v1')
+    expect(migration).not.toContain('tc_document_templates')
   })
 })

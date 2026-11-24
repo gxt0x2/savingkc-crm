@@ -159,12 +159,12 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
       : (typeof row.list_type === 'string' ? row.list_type : ''),
     calling_window: typeof row.calling_window === 'string' ? row.calling_window : null,
     line_check_flag: typeof row.line_check_flag === 'string' ? row.line_check_flag : null,
-    ...callScheduleFields(phone, typeof row.state === 'string' ? row.state : null),
+    ...callScheduleFields(phone),
   }
 }
 
-function callScheduleFields(phone: string, state: string | null): { call_tz: string; earliest_call_ct: string } {
-  const schedule = phoneCallSchedule(phone, state)
+function callScheduleFields(phone: string): { call_tz: string; earliest_call_ct: string } {
+  const schedule = phoneCallSchedule(phone)
   return { call_tz: schedule.callTz, earliest_call_ct: schedule.earliestCallCt }
 }
 
@@ -175,11 +175,13 @@ function maskedExportPhone(value: unknown): string | null {
   return value
 }
 
+const RETIRED_EXCLUSION_REASONS = new Set(['licensee_disclosure_required'])
+
 function excludedCounts(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const counts: Record<string, number> = {}
   for (const [reason, count] of Object.entries(value)) {
-    if (!reason || !Number.isInteger(count) || Number(count) < 0) continue
+    if (!reason || RETIRED_EXCLUSION_REASONS.has(reason) || !Number.isInteger(count) || Number(count) < 0) continue
     counts[reason] = Number(count)
   }
   return counts

@@ -10,26 +10,35 @@ const afterEasternLocalEnd = new Date('2026-11-17T02:30:00.000Z')
 
 describe('recipient call schedule', () => {
   it('stamps earliest Central time from the area code', () => {
-    expect(phoneCallSchedule('+18165550100', 'MO')).toMatchObject({ callTz: 'central', earliestCallCt: '09:00' })
-    expect(phoneCallSchedule('+19135550100', 'KS')).toMatchObject({ callTz: 'central', earliestCallCt: '09:00' })
-    expect(phoneCallSchedule('+13035550100', 'CO')).toMatchObject({ callTz: 'mountain', earliestCallCt: '10:00' })
-    expect(phoneCallSchedule('+12135550100', 'CA')).toMatchObject({ callTz: 'pacific', earliestCallCt: '11:00' })
-    expect(phoneCallSchedule('+18085550100', 'HI')).toMatchObject({ callTz: 'hawaii', earliestCallCt: '13:00' })
+    expect(phoneCallSchedule('+18165550100')).toMatchObject({ callTz: 'central', earliestCallCt: '09:00' })
+    expect(phoneCallSchedule('+19135550100')).toMatchObject({ callTz: 'central', earliestCallCt: '09:00' })
+    expect(phoneCallSchedule('+13035550100')).toMatchObject({ callTz: 'mountain', earliestCallCt: '10:00' })
+    expect(phoneCallSchedule('+12135550100')).toMatchObject({ callTz: 'pacific', earliestCallCt: '11:00' })
+    expect(phoneCallSchedule('+18085550100')).toMatchObject({ callTz: 'hawaii', earliestCallCt: '13:00' })
     expect(phoneCallSchedule('+19995550100')).toMatchObject({ callTz: 'unknown', earliestCallCt: '11:00' })
   })
 
-  it('uses the property state when the area code is unknown', () => {
-    expect(phoneCallSchedule('+19995550100', 'KS').callTz).toBe('central')
-    expect(phoneCallSchedule('+19995550100', 'CA').callTz).toBe('pacific')
+  it('fail-closes an unknown area code to 11:00 CT and does not use the property state', () => {
+    expect(phoneCallSchedule('+19995550100')).toMatchObject({ callTz: 'unknown', earliestCallCt: '11:00' })
+    expect(phoneCallSchedule('5550100')).toMatchObject({ callTz: 'unknown', earliestCallCt: '11:00' })
+  })
+
+  it('places 614 and 716 in Eastern and the new Pacific overlays in Pacific', () => {
+    for (const code of ['614', '716']) {
+      expect(phoneCallSchedule(`+1${code}5550100`)).toMatchObject({ callTz: 'eastern', earliestCallCt: '09:00' })
+    }
+    for (const code of ['279', '341', '350', '820', '840']) {
+      expect(phoneCallSchedule(`+1${code}5550100`)).toMatchObject({ callTz: 'pacific', earliestCallCt: '11:00' })
+    }
   })
 
   it('keeps a Pacific number callable and closed before 11:00 CT', () => {
-    const pacific = phoneCallSchedule('+12135550100', 'CA')
+    const pacific = phoneCallSchedule('+12135550100')
     expect(recipientCallWindowOpen(pacific, centralMorning)).toBe(false)
     expect(recipientCallWindowOpen(pacific, centralLateMorning)).toBe(true)
     expect(recipientCallWindowOpen(phoneCallSchedule('+18165550100'), centralMorning)).toBe(true)
     expect(campaignEndOpen(afterCampaignEnd)).toBe(false)
-    expect(recipientCallWindowOpen(phoneCallSchedule('+12125550100', 'NY'), afterEasternLocalEnd)).toBe(false)
+    expect(recipientCallWindowOpen(phoneCallSchedule('+12125550100'), afterEasternLocalEnd)).toBe(false)
   })
 })
 
