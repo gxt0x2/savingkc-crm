@@ -492,8 +492,10 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   return { checks, tags, intakes, coveredZips: [...covered].sort(), skipped }
 }
 
+/** Kept on the export row. Kansas geography does not set it. */
 export function ksLicenseUnconfirmed(state: string | null | undefined): boolean {
-  return (state ?? '').toUpperCase() === 'KS'
+  void state
+  return false
 }
 
 export function requiresLicenseeDisclosure(expiredSourced: boolean): boolean {
@@ -526,7 +528,6 @@ export function marketExportBlock(input: {
   state?: string | null
   county?: string | null
   now?: Date | null
-  ksExpiredReleaseApproved?: boolean
 }): string | null {
   if (!input.enabled && !input.expiredSourced) return null
   if (input.highPrice && !input.expiredSourced) return 'active_high_price'
@@ -546,7 +547,6 @@ export function marketExportBlock(input: {
       state: input.state,
       county: input.county,
       now: input.now,
-      ksExpiredReleaseApproved: input.ksExpiredReleaseApproved,
     })
   }
   if (input.ownerChanged) return 'owner_changed'

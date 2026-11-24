@@ -98,11 +98,11 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(expiredRowStamp('MO').multiLineAllowed).toBe(false)
   })
 
-  it('requires the licensee disclosure on the export path, not only as a stamp', () => {
+  it('keeps licensee disclosure on the stamp and does not block the dial for it', () => {
     expect(expiredRowStamp('MO').requiresLicenseeDisclosure).toBe(true)
     expect(expiredRowStamp('KS').requiresLicenseeDisclosure).toBe(true)
-    expect(gate({ requiresLicenseeDisclosure: false })).toBe('licensee_disclosure_required')
-    expect(gate({ requiresLicenseeDisclosure: undefined })).toBe('licensee_disclosure_required')
+    expect(gate({ requiresLicenseeDisclosure: false })).toBeNull()
+    expect(gate({ requiresLicenseeDisclosure: undefined })).toBeNull()
     expect(migration).toContain("RAISE EXCEPTION 'licensee_disclosure_required'")
     expect(migration).toContain("RAISE EXCEPTION 'expired_single_line_only'")
     expect(migration).toContain('requires_licensee_disclosure IS TRUE')
@@ -125,15 +125,16 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(migration).toContain("'owner_override_2026-11-14'")
   })
 
-  it('refuses a Kansas expired row and leaves a Missouri expired row alone', () => {
-    expect(expiredRowStamp('KS').ksLicenseUnconfirmed).toBe(true)
+  it('leaves a Kansas expired row eligible when the other gates pass', () => {
+    expect(expiredRowStamp('KS').ksLicenseUnconfirmed).toBe(false)
     expect(expiredRowStamp('MO').ksLicenseUnconfirmed).toBe(false)
-    expect(gate({ state: 'KS', county: 'johnson' })).toBe('ks_license_unconfirmed')
-    expect(gate({ state: 'KS', county: 'wyandotte', ksExpiredReleaseApproved: false })).toBe('ks_license_unconfirmed')
+    expect(gate({ state: 'KS', county: 'johnson' })).toBeNull()
+    expect(gate({ state: 'KS', county: 'wyandotte' })).toBeNull()
+    expect(gate({ state: 'KS', county: 'leavenworth' })).toBeNull()
     expect(gate({ state: 'MO', county: 'jackson' })).toBeNull()
     expect(gate({ state: 'MO', county: 'clay' })).toBeNull()
     expect(gate({ state: 'MO', county: 'platte' })).toBeNull()
-    expect(gate({ state: 'KS', county: 'johnson', ksExpiredReleaseApproved: true })).toBeNull()
+    expect(gate({ state: 'CO', county: 'denver' })).toBeNull()
     expect(migration).toContain("('KS_EXPIRED_RELEASE_APPROVED', 'false')")
     expect(migration).toContain("RETURN 'ks_license_unconfirmed'")
     expect(migration).toContain("upper(coalesce(review.state, '')) = 'KS'")

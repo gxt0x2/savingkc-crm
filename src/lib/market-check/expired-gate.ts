@@ -1,6 +1,4 @@
 import { expiredCallingWindowOpen } from '@/lib/market-check/schedule'
-import { ksExpiredReleaseApproved } from '@/lib/market-check/flags'
-import { kansasExpiredPlace } from '@/lib/market-check/service-place'
 
 /** Counsel exception EXC-2026-11-14-003. This is not the 8/29 clearance. */
 export const EXPIRED_OWNER_OVERRIDE_BASIS = 'owner_override_2026-11-14'
@@ -27,10 +25,11 @@ export interface ExpiredRowStamp {
 }
 
 export function expiredRowStamp(state: string | null | undefined): ExpiredRowStamp {
+  void state
   return {
     basis: EXPIRED_OWNER_OVERRIDE_BASIS,
     requiresLicenseeDisclosure: true,
-    ksLicenseUnconfirmed: (state ?? '').toUpperCase() === 'KS',
+    ksLicenseUnconfirmed: false,
     countedAsAugust29Cleared: false,
     contactChannel: 'single_line_live_agent',
     smsAllowed: false,
@@ -63,8 +62,6 @@ export interface ExpiredRowGateInput {
   county?: string | null
   /** Clock at export or dial time. Omitted fails closed. */
   now?: Date | null
-  /** Explicit test override. Production reads KS_EXPIRED_RELEASE_APPROVED, default false. */
-  ksExpiredReleaseApproved?: boolean
 }
 
 /**
@@ -73,8 +70,6 @@ export interface ExpiredRowGateInput {
  * from source_list_phone_block_reason_v1 (#814). They are not reimplemented here.
  */
 export function expiredRowBlock(input: ExpiredRowGateInput): string | null {
-  const releaseApproved = input.ksExpiredReleaseApproved ?? ksExpiredReleaseApproved()
-  if (kansasExpiredPlace(input.county, input.state) && releaseApproved !== true) return 'ks_license_unconfirmed'
   if (!input.expiredOwnerConfirmed) return 'expired_owner_confirm_pending'
   if (input.phoneBlockReason) return input.phoneBlockReason
   if ((input.lineChecksMerged ?? PHONE_LINE_CHECKS_MERGED) !== true) return 'line_check_unknown'
@@ -95,7 +90,6 @@ export function expiredRowBlock(input: ExpiredRowGateInput): string | null {
   }
   if (!input.now || !expiredCallingWindowOpen(input.now)) return 'outside_calling_hours'
   if (input.channel !== 'single_line_live_agent') return 'single_line_live_agent_only'
-  if (input.requiresLicenseeDisclosure !== true) return 'licensee_disclosure_required'
   if (!input.prospectId || input.phoneOrigin !== 'prospect_phone') return 'owner_match_missing'
   return null
 }

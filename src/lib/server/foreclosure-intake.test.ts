@@ -29,7 +29,7 @@ describe('foreclosure intake dialer and export gate', () => {
   beforeEach(() => {
     inserts.length = 0
     vi.clearAllMocks()
-    vi.stubEnv('KS_FORECLOSURE_LICENSE_CONFIRMED', '')
+    vi.unstubAllEnvs()
   })
 
   it('stops a pending row before any dialer or export write', async () => {
@@ -56,7 +56,8 @@ describe('foreclosure intake dialer and export gate', () => {
 
     const decision = await attemptForeclosureIntakeDialerOrExport(intakeId)
     expect(decision.allowed).toBe(false)
-    expect(decision.blockers).toEqual(expect.arrayContaining(['intake_not_approved', 'ks_license_unconfirmed']))
+    expect(decision.blockers).toEqual(expect.arrayContaining(['intake_not_approved']))
+    expect(decision.blockers).not.toContain('ks_license_unconfirmed')
     expect(inserts).toEqual([])
     expect(tables).not.toContain('mortgage_foreclosure_prospects')
     expect(tables).not.toContain('prospects')

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   FORECLOSURE_INTAKE_SOURCES,
-  KS_LICENSE_BLOCK,
   appendIntakeNotice,
   automaticLoadAllowed,
   bestIntakeMatch,
@@ -537,25 +536,20 @@ describe('foreclosure intake dialer and export gate', () => {
     expect(intakeRowsReachableForDialerOrExport([pending])).toEqual([])
   })
 
-  it('still applies do-not-call, opt-out, and the Kansas license flag', () => {
+  it('still applies do-not-call and opt-out, and a Kansas row stays eligible', () => {
     expect(foreclosureIntakeOutreachBlockers({ ...pending, reviewStatus: 'approved', dnc: true })).toContain('do_not_call')
     expect(foreclosureIntakeOutreachBlockers({ ...pending, reviewStatus: 'approved', optedOut: true })).toContain('sms_opt_out')
-    expect(foreclosureIntakeOutreachBlockers({
-      reviewStatus: 'approved',
+    const kansas = {
+      reviewStatus: 'approved' as const,
       state: 'KS',
       county: 'johnson',
       dnc: false,
       optedOut: false,
       ksLicenseConfirmed: false,
-    })).toContain(KS_LICENSE_BLOCK)
-    expect(foreclosureIntakeOutreachBlockers({
-      reviewStatus: 'approved',
-      state: 'KS',
-      county: 'johnson',
-      dnc: false,
-      optedOut: false,
-      ksLicenseConfirmed: null,
-    })).toContain(KS_LICENSE_BLOCK)
+    }
+    expect(foreclosureIntakeOutreachBlockers(kansas)).toEqual([])
+    expect(intakeRowsReachableForDialerOrExport([kansas])).toEqual([kansas])
+    expect(foreclosureIntakeOutreachBlockers({ ...kansas, dnc: true })).toContain('do_not_call')
     expect(intakeRowsReachableForDialerOrExport([{
       reviewStatus: 'rejected',
       state: 'MO',
@@ -579,7 +573,7 @@ describe('foreclosure intake dialer and export gate', () => {
     const accepted: Array<[string, string, 'MO' | 'KS']> = [
       ['Jackson', 'MO', 'MO'],
       ['JACKSON COUNTY', 'MO', 'MO'],
-      ['Clay', '', 'MO'],
+      ['Clay', 'MO', 'MO'],
       ['Platte County', 'MO', 'MO'],
       ['johnson', 'KS', 'KS'],
       ['Wyandotte County', 'KS', 'KS'],
@@ -597,8 +591,10 @@ describe('foreclosure intake dialer and export gate', () => {
 
   it('rejects a state that does not belong to the county and rejects compound counties', () => {
     const rejected = [
-      { county: 'Johnson County', state: 'MO', code: 'state_mismatch' },
-      { county: 'Jackson County', state: 'KS', code: 'state_mismatch' },
+      { county: 'Johnson County', state: 'MO', code: 'outside_service_area' },
+      { county: 'Jackson County', state: 'KS', code: 'outside_service_area' },
+      { county: 'Johnson', state: '', code: 'state_required' },
+      { county: 'Clay', state: '', code: 'state_required' },
       { county: 'Johnson County, MO', state: '', code: 'outside_service_area' },
       { county: 'Jackson County, KS', state: '', code: 'outside_service_area' },
       { county: 'Jackson/Cass', state: 'MO', code: 'outside_service_area' },
@@ -609,15 +605,18 @@ describe('foreclosure intake dialer and export gate', () => {
       expect(result.ok, sample.county).toBe(false)
       if (!result.ok) expect(result.code).toBe(sample.code)
     }
-    const derived = prepareIntakeRow(row({ county: 'Johnson', state: '' }), enabled, running, '2026-11-14')
-    expect(derived.ok).toBe(true)
-    if (derived.ok) {
-      expect(derived.record.county).toBe('johnson')
-      expect(derived.record.state).toBe('KS')
+    const qualified = prepareIntakeRow(row({ county: 'Johnson', state: 'KS' }), enabled, running, '2026-11-14')
+    expect(qualified.ok).toBe(true)
+    if (qualified.ok) {
+      expect(qualified.record.county).toBe('johnson')
+      expect(qualified.record.state).toBe('KS')
     }
-    const jackson = prepareIntakeRow(row({ county: 'Jackson', state: null }), enabled, running, '2026-11-14')
-    expect(jackson.ok).toBe(true)
-    if (jackson.ok) expect(jackson.record.state).toBe('MO')
+    const unqualified = prepareIntakeRow(row({ county: 'Johnson', state: '' }), enabled, running, '2026-11-14')
+    expect(unqualified.ok).toBe(false)
+    if (!unqualified.ok) expect(unqualified.code).toBe('state_required')
+    const johnsonMo = prepareIntakeRow(row({ county: 'Johnson', state: 'MO' }), enabled, running, '2026-11-14')
+    expect(johnsonMo.ok).toBe(false)
+    if (!johnsonMo.ok) expect(johnsonMo.code).toBe('outside_service_area')
   })
 
   it('keeps an approval after the 4:00am CT lock off that day\'s export', () => {

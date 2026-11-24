@@ -74,6 +74,7 @@ describe('foreclosure ingest control service area', () => {
   it('saves Jackson County, JOHNSON, and Wyandotte Co. inside the service area', async () => {
     await expect(setForeclosureIngestControl(actor, {
       county: 'Jackson County',
+      state: 'MO',
       noticeType: 'lis_pendens',
       paused: true,
     })).resolves.toMatchObject({ county: 'jackson', noticeType: 'lis_pendens', paused: true })

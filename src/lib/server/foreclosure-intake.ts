@@ -146,8 +146,8 @@ export async function reviewForeclosureIntake(
 
 /**
  * Holding-area gate for any dialer or export attempt.
- * Pending and rejected rows stop here. Do-not-call, opt-out, and the
- * Kansas license flag are evaluated before a row could leave.
+ * Pending and rejected rows stop here. Do-not-call and opt-out are
+ * evaluated before a row could leave.
  * This function does not write a prospect, a phone, or an export.
  */
 export async function attemptForeclosureIntakeDialerOrExport(id: string): Promise<{ allowed: false; blockers: string[] }> {
@@ -155,7 +155,6 @@ export async function attemptForeclosureIntakeDialerOrExport(id: string): Promis
   const row = await loadIntake(id)
   const phones: string[] = []
   const optedOut = await optedOutPhone(phones)
-  const ksLicenseConfirmed = process.env.KS_FORECLOSURE_LICENSE_CONFIRMED === 'true' ? true : null
   const gate = {
     reviewStatus: row.review_status,
     approvedAt: row.approved_at,
@@ -163,7 +162,7 @@ export async function attemptForeclosureIntakeDialerOrExport(id: string): Promis
     county: row.county,
     dnc: false,
     optedOut,
-    ksLicenseConfirmed,
+    ksLicenseConfirmed: null,
   }
   const blockers = foreclosureIntakeOutreachBlockers(gate)
   if (blockers.length === 0 && preExportFilter([gate], new Date()).length === 0) blockers.push('calling_list_locked')

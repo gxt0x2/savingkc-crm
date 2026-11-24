@@ -28,13 +28,15 @@ function row(phone: string, address = '10 Oak'): DialerExportRow {
     basis: 'tax_delinquent',
     calling_window: null,
     line_check_flag: null,
+    call_tz: 'central',
+    earliest_call_ct: '09:00',
   }
 }
 
 describe('dialer export file', () => {
   it('writes a header even when every number was scrubbed', () => {
     expect(dialerExportCsv([])).toBe(
-      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id,requires_licensee_disclosure,ks_license_unconfirmed,basis,calling_window,line_check_flag\n',
+      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id,requires_licensee_disclosure,ks_license_unconfirmed,basis,calling_window,line_check_flag,call_tz,earliest_call_ct\n',
     )
   })
 
@@ -96,6 +98,21 @@ describe('dialer export file', () => {
       sourceListId: null,
     })
     expect(scrub.excludedCounts).toEqual({ prospect_dnc: 1 })
+    const retired = await recordDialerExportBatch({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          export_batch_id: '22222222-2222-4222-8222-222222222222',
+          rows: [row('+18165550101')],
+          excluded_counts: { prospect_dnc: 1, licensee_disclosure_required: 4 },
+          excluded_phones: [],
+        },
+        error: null,
+      }),
+    }, 'casey@savingkc.com', {
+      listType: null, county: null, state: null, violationKind: null, sourceListId: null,
+    })
+    expect(retired.excludedCounts).toEqual({ prospect_dnc: 1 })
+    expect(retired.excludedCounts).not.toHaveProperty('licensee_disclosure_required')
     expect(scrub.excludedPhones).toEqual([{ reason: 'prospect_dnc', phoneMasked: '******4411' }])
   })
 
@@ -114,7 +131,7 @@ describe('dialer export file', () => {
       phone_origin: 'source_row',
     }
     expect(expiredExportPathBlock(expired, 2, open)).toBe('expired_single_line_only')
-    expect(expiredExportPathBlock(expired, 1, open)).toBe('licensee_disclosure_required')
+    expect(expiredExportPathBlock(expired, 1, open)).toBe('owner_match_missing')
     expect(expiredExportPathBlock({
       ...expired,
       requires_licensee_disclosure: true,
@@ -133,7 +150,7 @@ describe('dialer export file', () => {
       requires_licensee_disclosure: true,
       prospect_id: '00000000-0000-4000-8000-000000000010',
       phone_origin: 'prospect_phone',
-    }, 1, open)).toBe('ks_license_unconfirmed')
+    }, 1, open)).toBeNull()
     expect(expiredExportPathBlock({
       ...expired,
       state: 'MO',
@@ -160,6 +177,6 @@ describe('dialer export file', () => {
       violationKind: null,
       sourceListId: null,
       lineMode: 1,
-    }, open)).rejects.toMatchObject({ code: 'licensee_disclosure_required', status: 409 })
+    }, open)).rejects.toMatchObject({ code: 'owner_match_missing', status: 409 })
   })
 })
