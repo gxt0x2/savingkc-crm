@@ -6,6 +6,7 @@ const gitSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "l
 const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['pdfjs-dist'],
   outputFileTracingIncludes: {
     '/api/admin/market-check': ['./data/mls-seeds/**/*'],
     '/api/cron/market-check': ['./data/mls-seeds/**/*'],

@@ -4,6 +4,7 @@ import {
   listForeclosureIngestControls,
   setForeclosureIngestControl,
 } from '@/lib/server/foreclosure-ingest'
+import { getForeclosureFreshness } from '@/lib/server/foreclosure-daily-ingest'
 import { ForeclosureError } from '@/lib/server/foreclosure-prospects'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +20,9 @@ export async function GET() {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
-    return prospectingJson({ controls: await listForeclosureIngestControls() })
+    const controls = await listForeclosureIngestControls()
+    const freshness = await getForeclosureFreshness()
+    return prospectingJson({ controls, freshness })
   } catch (error) {
     return foreclosureError(error)
   }

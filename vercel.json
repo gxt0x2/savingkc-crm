@@ -67,6 +67,10 @@
       "schedule": "30 11 * * *"
     },
     {
+      "path": "/api/cron/foreclosure-ingest",
+      "schedule": "30 13 * * 1-5"
+    },
+    {
       "path": "/api/cron/appointment-outcomes",
       "schedule": "20 12 * * *"
     },
