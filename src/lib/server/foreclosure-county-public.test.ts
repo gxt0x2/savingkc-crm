@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseForeclosureCsv } from '@/lib/prospecting/foreclosure'
 import {
+  COUNTY_PUBLIC_URLS,
   MOPUBLICNOTICES_COMPUTER_USE_GAP,
   buildCountyPublicCsv,
   noticeRegistryForeclosureUrls,
@@ -139,5 +140,18 @@ describe('county public parsers', () => {
     expect(lines[1]).toContain('2903 Bales Ave')
     expect(lines[1]).toContain('|')
     expect(lines[1]).toContain('64128')
+  })
+
+  it('reads the JoCo sheriff host and a double-encoded GetAllSales body', () => {
+    expect(COUNTY_PUBLIC_URLS.jocoSheriff).toBe('https://foreclosuresales.jocosheriff.org/api/ForeclosureSales/GetAllSales')
+    const sale = {
+      Status: 'PENDING',
+      SaleDateString: '09/30/2026',
+      CaseNumber: 'JO-2026-CV-000523',
+      DefendantName: 'BENJAMIN PATRICK HALL, ET AL',
+    }
+    const list = { SalesList: [sale] }
+    expect(parseJocoSales(JSON.stringify(JSON.stringify(list)))).toEqual([sale])
+    expect(parseJocoSales(JSON.stringify(list))).toEqual([sale])
   })
 })

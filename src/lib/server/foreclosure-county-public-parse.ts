@@ -202,7 +202,9 @@ function parseSouthlawDataLine(line: string): SouthlawRow | null {
 }
 
 export function parseJocoSales(payload: unknown): JocoSale[] {
-  const body = typeof payload === 'string' ? JSON.parse(payload) as unknown : payload
+  let body = payload
+  if (typeof body === 'string') body = JSON.parse(body) as unknown
+  if (typeof body === 'string') body = JSON.parse(body) as unknown
   if (!body || typeof body !== 'object') return []
   const sales = (body as { SalesList?: unknown }).SalesList
   if (!Array.isArray(sales)) return []

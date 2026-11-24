@@ -37,7 +37,7 @@ export type {
 
 /** Public filing sources used by the Sep 2026 county backfill. Not PropStream. */
 export const COUNTY_PUBLIC_URLS = {
-  jocoSheriff: 'https://jims.jocosheriff.org/fs/api/ForeclosureSales/GetAllSales',
+  jocoSheriff: 'https://foreclosuresales.jocosheriff.org/api/ForeclosureSales/GetAllSales',
   legalRecordPdf: 'https://thelegalrecord.net/LR.pdf',
   southlawMoPdf: 'https://www.southlaw.com/report/Sales_Report_MO.pdf',
   southlawKsPdf: 'https://www.southlaw.com/report/Sales_Report_KS.pdf',

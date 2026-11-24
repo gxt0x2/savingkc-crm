@@ -25,7 +25,7 @@ These are the same public artifacts as the Sep 2026 backfill. The cron downloads
 
 | Source | URL | What it fills |
 | --- | --- | --- |
-| JoCo sheriff | `https://jims.jocosheriff.org/fs/api/ForeclosureSales/GetAllSales` | Johnson KS parties, case, sale status. No street address. |
+| JoCo sheriff | `https://foreclosuresales.jocosheriff.org/api/ForeclosureSales/GetAllSales` | Johnson KS parties, case, sale status. No street address. |
 | SouthLaw KS PDF | `https://www.southlaw.com/report/Sales_Report_KS.pdf` | Johnson situs, sale time, opening bid, firm file. Firm-only, not the whole market. |
 | SouthLaw MO PDF | `https://www.southlaw.com/report/Sales_Report_MO.pdf` | Jackson sale calendar. No borrower name. |
 | Legal Record | `https://thelegalrecord.net/LR.pdf` | Johnson MF civil filings (plaintiff / defendant / case). **TF tax rows are excluded.** No street on the filing line. |
