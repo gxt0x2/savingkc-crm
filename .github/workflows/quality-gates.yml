@@ -67,6 +67,9 @@ jobs:
       - name: Mojo appointment provenance PostgreSQL rehearsal
         run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-mojo-appointment-provenance.sh
 
+      - name: Mojo named callback identity shell PostgreSQL rehearsal
+        run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-mojo-named-callback-shell.sh
+
       - name: Dialer export suppression PostgreSQL rehearsal
         run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-dialer-export-suppression.sh
 

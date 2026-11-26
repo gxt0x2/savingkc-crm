@@ -89,6 +89,49 @@ describe('canonical Mojo call import', () => {
     expect(mapMojoDisposition(disposition)).toBe(outcome)
   })
 
+  it('keeps lead_exists on the call without treating an undated callback as promotable', () => {
+    expect(normalizeMojoCallRecord({ ...call, follow_up_date: undefined, lead_exists: true })).toMatchObject({
+      lead_exists: true,
+      contact_name: 'Seller Example',
+    })
+    expect(normalizeMojoCallRecord({ ...call, lead_exists: false }).lead_exists).toBeUndefined()
+    expect(qualifyMojoCallRecord({
+      ...call,
+      follow_up_date: undefined,
+      lead_exists: true,
+      disposition: 'Callback Requested',
+    }).assessment).toMatchObject({
+      eligible: false,
+      status: 'ineligible',
+      reasons: ['callback_without_scheduled_time'],
+    })
+    const merged = mergeMojoCallEvidence(call, { ...call, lead_exists: true })
+    expect(merged.call.lead_exists).toBe(true)
+    expect(merged.improved).toBe(true)
+  })
+
+  it('does not promote or schedule work for a named callback that has no follow-up time', async () => {
+    const dependencies = {
+      ingest: vi.fn().mockResolvedValue(result({
+        promotionEligible: false,
+        followUpAt: null,
+        qualificationStatus: 'ineligible',
+        qualificationReasons: ['callback_without_scheduled_time'],
+        unresolvedReason: null,
+      })),
+      suppressDnc: vi.fn(),
+      createAppointment: vi.fn(),
+      createFollowUp: vi.fn(),
+      transitionLifecycle: vi.fn(),
+      processRecordingEvidence: vi.fn(),
+    }
+    await processCanonicalMojoCall({ ...call, follow_up_date: undefined }, dependencies)
+    expect(dependencies.createFollowUp).not.toHaveBeenCalled()
+    expect(dependencies.createAppointment).not.toHaveBeenCalled()
+    expect(dependencies.transitionLifecycle).not.toHaveBeenCalled()
+    expect(dependencies.processRecordingEvidence).not.toHaveBeenCalled()
+  })
+
   it('enforces the shared qualification policy before promotion', () => {
     expect(qualifyMojoCallRecord({
       ...call,
