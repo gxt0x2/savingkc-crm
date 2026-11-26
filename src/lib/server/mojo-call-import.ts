@@ -54,6 +54,7 @@ export interface MojoCallRecord {
   qualified_by_agent?: boolean
   qualification_override_reason?: string
   has_appointment?: boolean
+  lead_exists?: boolean
   promotion_eligible?: boolean
   qualification_status?: MojoQualificationAssessment['status']
   qualification_reasons?: string[]
@@ -168,6 +169,7 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
       ? { qualification_override_reason: stringField(raw.qualification_override_reason, 500) }
       : {}),
     ...(booleanField(raw.has_appointment) ? { has_appointment: true } : {}),
+    ...(booleanField(raw.lead_exists) ? { lead_exists: true } : {}),
     ...(booleanField(raw.promotion_eligible) ? { promotion_eligible: true } : {}),
     ...(stringField(raw.qualification_status, 40) ? { qualification_status: stringField(raw.qualification_status, 40) as MojoQualificationAssessment['status'] } : {}),
     ...(stringArrayField(raw.qualification_reasons, 12, 80).length > 0
@@ -262,6 +264,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
       incoming.qualification_override_reason,
     ),
     has_appointment: existing.has_appointment || incoming.has_appointment,
+    ...(existing.lead_exists || incoming.lead_exists ? { lead_exists: true } : {}),
     call_duration: incomingDuration,
   }).call
 
@@ -269,7 +272,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
     'call_date', 'contact_name', 'phone_number', 'property_address', 'city', 'state', 'zip', 'provider_contact_id',
     'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email', 'emails',
     'provider_recording_id', 'secondary_provider_recording_ids', 'provider_action_id', 'provider_activity_ids', 'source_batch_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
-    'promotion_eligible', 'qualification_status',
+    'promotion_eligible', 'qualification_status', 'lead_exists',
   ]
   const improved = materialFields.some((field) => JSON.stringify(merged[field]) !== JSON.stringify(existing[field]))
     || JSON.stringify(merged.qualification_reasons || []) !== JSON.stringify(existing.qualification_reasons || [])
